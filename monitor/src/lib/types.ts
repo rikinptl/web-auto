@@ -9,6 +9,8 @@ export type Lead = {
   mapsUrl: string;
   /** Per-site deploy job duration (generate + deploy + sheet), seconds */
   deployDurationSec: number | null;
+  /** UTC timestamp when the site first went live */
+  siteCreatedAt: string | null;
 };
 
 export type PipelineStats = {

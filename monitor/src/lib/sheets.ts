@@ -11,6 +11,7 @@ const HEADERS = [
   "Live URL",
   "Google Maps URL",
   "Deploy Sec",
+  "Site Created",
 ] as const;
 
 function parseDeploySec(raw: string | undefined): number | null {
@@ -43,6 +44,7 @@ function rowToLead(row: string[]): Lead | null {
     liveUrl: row[6] || "",
     mapsUrl: row[7] || "",
     deployDurationSec: parseDeploySec(row[8]),
+    siteCreatedAt: row[9]?.trim() || null,
   };
 }
 
@@ -54,7 +56,7 @@ export async function fetchLeadsFromSheet(): Promise<Lead[]> {
 
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
-  const range = `Sheet1!A1:I1000`;
+  const range = `Sheet1!A1:J1000`;
 
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   const rows = res.data.values ?? [];

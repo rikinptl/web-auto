@@ -160,6 +160,14 @@ export function LiveSitesModal({
                           </div>
                           <div>
                             <dt className="text-xs font-medium uppercase tracking-wide text-ink-500">
+                              Site created
+                            </dt>
+                            <dd className="mt-1 text-xs text-ink-200">
+                              {lead.siteCreatedAt || "—"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs font-medium uppercase tracking-wide text-ink-500">
                               Build time
                             </dt>
                             <dd className="mt-1 font-mono text-ink-200">

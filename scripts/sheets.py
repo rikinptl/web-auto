@@ -2,16 +2,19 @@
 
 API efficiency: prefer upsert_leads() for multiple rows — one read + one batch
 write instead of per-row requests (Google Sheets limit: ~300 requests/min).
+
+Sheet1 = lead inventory. Audit Log = append-only metadata for auditing.
 """
 
 import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 
 import gspread
 from google.oauth2.service_account import Credentials
-from gspread.exceptions import APIError
+from gspread.exceptions import APIError, WorksheetNotFound
 
 from maps_url import place_key, resolve_maps_url
 
@@ -37,6 +40,7 @@ def record_to_lead(row: dict) -> dict:
         "live_url": row.get("Live URL", ""),
         "google_maps_url": row.get("Google Maps URL", ""),
         "deploy_duration_sec": row.get("Deploy Sec", ""),
+        "site_created_at": row.get("Site Created", ""),
     }
 
 
@@ -116,6 +120,33 @@ HEADERS = [
     "Live URL",
     "Google Maps URL",
     "Deploy Sec",
+    "Site Created",
+]
+
+AUDIT_SHEET_NAME = "Audit Log"
+AUDIT_HEADERS = [
+    "Timestamp UTC",
+    "Event",
+    "Business Name",
+    "Phone",
+    "Niche",
+    "City",
+    "Live URL",
+    "Google Maps URL",
+    "Deploy Repo",
+    "Deploy Org",
+    "Deploy Duration Sec",
+    "Site Created",
+    "GitHub Run ID",
+    "GitHub Workflow",
+    "GitHub Job",
+    "Lead Index",
+    "Rating",
+    "Review Count",
+    "Review Snippets",
+    "Address",
+    "Est AI Cost USD",
+    "Notes",
 ]
 
 SCOPES = [
@@ -124,8 +155,13 @@ SCOPES = [
 ]
 
 LAST_COL = chr(64 + len(HEADERS))
+AUDIT_LAST_COL = chr(64 + len(AUDIT_HEADERS))
 MAX_RETRIES = 3
 RETRY_BACKOFF_SEC = 2.0
+
+
+def utc_now_str() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def get_credentials() -> Credentials:
@@ -141,13 +177,17 @@ def get_credentials() -> Credentials:
     return Credentials.from_service_account_file(creds_path, scopes=SCOPES)
 
 
-def get_worksheet():
+def get_spreadsheet():
     spreadsheet_id = os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID")
     if not spreadsheet_id:
         raise ValueError("GOOGLE_SHEETS_SPREADSHEET_ID is not set")
 
     client = gspread.authorize(get_credentials())
-    return client.open_by_key(spreadsheet_id).sheet1
+    return client.open_by_key(spreadsheet_id)
+
+
+def get_worksheet():
+    return get_spreadsheet().sheet1
 
 
 def _with_retry(action, label: str):
@@ -177,6 +217,32 @@ def ensure_headers(worksheet) -> None:
     _with_retry(_update_headers, "ensure_headers")
 
 
+def ensure_audit_headers(worksheet) -> None:
+    first_row = worksheet.row_values(1)
+    if first_row == AUDIT_HEADERS:
+        return
+
+    def _update_headers():
+        worksheet.update(values=[AUDIT_HEADERS], range_name="A1", value_input_option="USER_ENTERED")
+        worksheet.format(f"A1:{AUDIT_LAST_COL}1", {"textFormat": {"bold": True}})
+
+    _with_retry(_update_headers, "ensure_audit_headers")
+
+
+def get_audit_worksheet():
+    spreadsheet = get_spreadsheet()
+    try:
+        worksheet = spreadsheet.worksheet(AUDIT_SHEET_NAME)
+    except WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(
+            title=AUDIT_SHEET_NAME,
+            rows=2000,
+            cols=len(AUDIT_HEADERS),
+        )
+    ensure_audit_headers(worksheet)
+    return worksheet
+
+
 def is_mock_lead(lead: dict) -> bool:
     name = (lead.get("name") or "").strip().lower()
     phone = (lead.get("phone") or "").strip()
@@ -198,7 +264,84 @@ def lead_to_row(lead: dict) -> list:
         lead.get("live_url", ""),
         resolve_maps_url(lead),
         lead.get("deploy_duration_sec", ""),
+        lead.get("site_created_at", ""),
     ]
+
+
+def _merge_existing_fields(lead: dict, existing: dict | None) -> dict:
+    """Preserve inventory fields not present on incoming lead payloads (e.g. scrape-only updates)."""
+    if not existing:
+        return lead
+    merged = dict(lead)
+    for sheet_key, lead_key in (
+        ("Live URL", "live_url"),
+        ("DeepSeek Copy Status", "copy_status"),
+        ("Deploy Sec", "deploy_duration_sec"),
+        ("Site Created", "site_created_at"),
+        ("Google Maps URL", "google_maps_url"),
+    ):
+        if not str(merged.get(lead_key) or "").strip():
+            merged[lead_key] = existing.get(sheet_key, "")
+    return merged
+
+
+def audit_row_from_lead(lead: dict, event: str, notes: str = "") -> list:
+    snippets = lead.get("review_snippets") or []
+    snippet_count = len(snippets) if isinstance(snippets, list) else 0
+    est_cost = os.environ.get("EST_AI_COST_USD", os.environ.get("DEEPSEEK_EST_COST_PER_SITE", "0.03"))
+
+    return [
+        utc_now_str(),
+        event,
+        strip_icon_glyphs(lead.get("name", "")),
+        clean_phone(lead.get("phone", "")),
+        lead.get("niche") or lead.get("category", ""),
+        lead.get("city", ""),
+        lead.get("live_url", ""),
+        resolve_maps_url(lead),
+        os.environ.get("DEPLOY_REPO", ""),
+        os.environ.get("DEPLOY_ORG", os.environ.get("GITHUB_ORG", "kem-llc")),
+        lead.get("deploy_duration_sec", ""),
+        lead.get("site_created_at", ""),
+        os.environ.get("GITHUB_RUN_ID", ""),
+        os.environ.get("GITHUB_WORKFLOW", ""),
+        os.environ.get("GITHUB_JOB", ""),
+        os.environ.get("LEAD_INDEX", ""),
+        lead.get("rating", ""),
+        lead.get("reviews", ""),
+        snippet_count,
+        strip_icon_glyphs(lead.get("address", "")),
+        est_cost,
+        notes,
+    ]
+
+
+def append_audit_record(lead: dict, event: str, notes: str = "") -> None:
+    """Append one row to the Audit Log sheet (never overwrites history)."""
+    worksheet = get_audit_worksheet()
+    row = audit_row_from_lead(lead, event, notes=notes)
+
+    def _append():
+        worksheet.append_row(row, value_input_option="USER_ENTERED")
+
+    _with_retry(_append, "append_audit_record")
+    print(f"Audit log: {event} — {lead.get('name', '')}", flush=True)
+
+
+def find_lead_in_inventory(name: str, phone: str) -> dict | None:
+    """Return existing sheet row as dict keyed by header names."""
+    worksheet = get_worksheet()
+    ensure_headers(worksheet)
+    records = _with_retry(worksheet.get_all_records, "get_all_records")
+    name_norm = strip_icon_glyphs(name)
+    phone_norm = clean_phone(phone)
+    for row in records:
+        if (
+            strip_icon_glyphs(row.get("Business Name", "")) == name_norm
+            and clean_phone(row.get("Phone", "")) == phone_norm
+        ):
+            return row
+    return None
 
 
 def _load_row_index(worksheet) -> dict[tuple[str, str], int]:
@@ -221,9 +364,18 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
     worksheet = get_worksheet()
     ensure_headers(worksheet)
     row_index = _load_row_index(worksheet)
+    existing_records = _with_retry(worksheet.get_all_records, "get_all_records")
+    existing_by_key: dict[tuple[str, str], dict] = {}
+    for row in existing_records:
+        key = (
+            strip_icon_glyphs(row.get("Business Name", "")),
+            clean_phone(row.get("Phone", "")),
+        )
+        existing_by_key[key] = row
 
     batch_updates = []
     rows_to_append = []
+    audit_events: list[tuple[dict, str]] = []
 
     for lead in leads:
         if is_mock_lead(lead):
@@ -231,6 +383,8 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
         phone = clean_phone(lead.get("phone", ""))
         lead = {**lead, "phone": phone, "name": strip_icon_glyphs(lead.get("name", ""))}
         key = (lead.get("name", ""), phone)
+        existing = existing_by_key.get(key)
+        lead = _merge_existing_fields(lead, existing)
         values = lead_to_row(lead)
         existing_row = row_index.get(key)
         if existing_row:
@@ -239,6 +393,8 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
             )
         else:
             rows_to_append.append(values)
+            if os.environ.get("AUDIT_SCRAPE", "true").lower() in {"1", "true", "yes"}:
+                audit_events.append((lead, "lead_scraped"))
 
     if batch_updates:
 
@@ -255,6 +411,9 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
 
         _with_retry(_append_rows, "append_rows")
         print(f"Batch appended {len(rows_to_append)} row(s)")
+
+    for lead, event in audit_events:
+        append_audit_record(lead, event, notes="New lead added to inventory")
 
     return {"updated": len(batch_updates), "appended": len(rows_to_append)}
 

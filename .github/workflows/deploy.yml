@@ -310,3 +310,9 @@ jobs:
           LIVE_URL: ${{ steps.org_deploy.outputs.live_url }}
           COPY_STATUS: Done
           LEAD_INDEX: ${{ matrix.lead_index }}
+          DEPLOY_REPO: ${{ steps.org_deploy.outputs.repo_slug }}
+          DEPLOY_ORG: ${{ vars.DEPLOY_ORG }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          GITHUB_JOB: ${{ github.job }}
+          EST_AI_COST_USD: "0.03"

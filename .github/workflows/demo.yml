@@ -139,6 +139,12 @@ jobs:
           LIVE_URL: ${{ steps.deploy.outputs.live_url }}
           COPY_STATUS: Done
           LEAD_INDEX: "0"
+          DEPLOY_REPO: web-auto-demo
+          DEPLOY_ORG: ${{ vars.DEPLOY_ORG }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_WORKFLOW: ${{ github.workflow }}
+          GITHUB_JOB: ${{ github.job }}
+          EST_AI_COST_USD: "0.03"
 
       - name: Demo summary
         run: |
