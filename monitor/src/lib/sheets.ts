@@ -10,7 +10,14 @@ const HEADERS = [
   "DeepSeek Copy Status",
   "Live URL",
   "Google Maps URL",
+  "Deploy Sec",
 ] as const;
+
+function parseDeploySec(raw: string | undefined): number | null {
+  if (!raw?.trim()) return null;
+  const n = Number.parseInt(raw.trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -35,6 +42,7 @@ function rowToLead(row: string[]): Lead | null {
     copyStatus: row[5] || "",
     liveUrl: row[6] || "",
     mapsUrl: row[7] || "",
+    deployDurationSec: parseDeploySec(row[8]),
   };
 }
 
@@ -46,7 +54,7 @@ export async function fetchLeadsFromSheet(): Promise<Lead[]> {
 
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
-  const range = `Sheet1!A1:H1000`;
+  const range = `Sheet1!A1:I1000`;
 
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   const rows = res.data.values ?? [];

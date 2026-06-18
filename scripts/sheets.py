@@ -36,6 +36,7 @@ def record_to_lead(row: dict) -> dict:
         "copy_status": row.get("DeepSeek Copy Status", ""),
         "live_url": row.get("Live URL", ""),
         "google_maps_url": row.get("Google Maps URL", ""),
+        "deploy_duration_sec": row.get("Deploy Sec", ""),
     }
 
 
@@ -114,6 +115,7 @@ HEADERS = [
     "DeepSeek Copy Status",
     "Live URL",
     "Google Maps URL",
+    "Deploy Sec",
 ]
 
 SCOPES = [
@@ -195,6 +197,7 @@ def lead_to_row(lead: dict) -> list:
         lead.get("copy_status", "Pending"),
         lead.get("live_url", ""),
         resolve_maps_url(lead),
+        lead.get("deploy_duration_sec", ""),
     ]
 
 

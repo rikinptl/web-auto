@@ -75,6 +75,8 @@ export function DashboardShell() {
         open={liveSitesOpen}
         onClose={() => setLiveSitesOpen(false)}
         orgName={data.links.kemOrg?.split("/").pop() ?? "kem-llc"}
+        costPerSiteUsd={data.aiCost.costPerSiteUsd}
+        tokensPerSite={data.aiCost.tokensPerSite}
       />
       <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-ink-950/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-6">

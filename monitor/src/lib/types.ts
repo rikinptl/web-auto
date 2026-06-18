@@ -7,6 +7,8 @@ export type Lead = {
   copyStatus: string;
   liveUrl: string;
   mapsUrl: string;
+  /** Per-site deploy job duration (generate + deploy + sheet), seconds */
+  deployDurationSec: number | null;
 };
 
 export type PipelineStats = {
