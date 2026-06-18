@@ -2,17 +2,15 @@
 """
 Google Maps Lead Scraper - B2B No-Website Filter
 
-This script uses Playwright (async) to scrape Google Maps for local service businesses
-and extracts only those that do NOT have a website listed. It saves the filtered leads
-to 'no_website_leads.json'.
+Scrolls Maps results in batches, quickly checks each place for a website,
+and fully extracts only businesses without one. Keeps scrolling until
+MAX_RESULTS qualified leads are found or MAX_CHECK_LISTINGS is reached.
 
-Usage:
-    python google_maps_scraper.py
-
-Configuration:
-    - SEARCH_QUERY:    The business type and location (e.g., "plumber near Chicago")
-    - MAX_RESULTS:     Maximum number of listings to process (stops scrolling after this)
-    - HEADLESS:        Set to False to watch the browser (helps debugging)
+Configuration (env):
+    SEARCH_QUERY         Business type + location
+    MAX_RESULTS          Target count of no-website leads to collect
+    MAX_CHECK_LISTINGS   Max listings to inspect before giving up (default 80)
+    HEADLESS             true/false
 """
 
 import asyncio
@@ -33,12 +31,16 @@ from sheets import replace_inventory  # noqa: E402
 # ==================== CONFIGURATION ====================
 SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "plumber near Dallas, TX")
 MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "50"))
+MAX_CHECK_LISTINGS = int(
+    os.environ.get(
+        "MAX_CHECK_LISTINGS",
+        os.environ.get("MAX_SCROLL_LISTINGS", str(max(80, MAX_RESULTS * 15))),
+    )
+)
 HEADLESS = os.environ.get("HEADLESS", "false").lower() in {"1", "true", "yes"}
 SLOW_MO = int(os.environ.get("SLOW_MO", "100"))
 NAV_TIMEOUT_MS = int(os.environ.get("NAV_TIMEOUT_MS", "60000"))
-MAX_SCROLL_LISTINGS = int(
-    os.environ.get("MAX_SCROLL_LISTINGS", str(max(50, MAX_RESULTS * 10)))
-)
+QUICK_CHECK_TIMEOUT_MS = int(os.environ.get("QUICK_CHECK_TIMEOUT_MS", "10000"))
 
 
 async def dismiss_consent(page) -> None:
@@ -52,7 +54,6 @@ async def dismiss_consent(page) -> None:
 
 
 async def wait_for_results(page) -> None:
-    """Wait for Maps results without networkidle (Maps never goes idle in CI)."""
     selectors = [
         'div[role="feed"] div[role="article"]',
         'div[role="feed"]',
@@ -88,28 +89,32 @@ def is_google_url(href: str) -> bool:
     )
 
 
-async def wait_for_place_panel(page) -> None:
-    selectors = [
-        'button[data-item-id="address"]',
-        'button[aria-label^="Address:"]',
-        'div[role="main"] h1',
-        "h1",
-    ]
-    last_error = None
-    for selector in selectors:
-        try:
-            await page.wait_for_selector(selector, timeout=15000)
-            return
-        except PlaywrightTimeoutError as exc:
-            last_error = exc
-    raise last_error or PlaywrightTimeoutError("Place panel did not load")
+async def get_scrollable(page):
+    scrollable = page.locator('div[role="feed"]')
+    if await scrollable.count() == 0:
+        scrollable = page.locator(
+            'div.m6QErb.DxyBCb.kA9KIf.dS8AEf, '
+            'div[role="feed"] >> xpath=ancestor::div[contains(@style, "overflow")]'
+        )
+    if await scrollable.count() == 0:
+        scrollable = page.locator("body")
+    return scrollable
 
 
-async def collect_place_urls(page, limit: int) -> list[tuple[str, str]]:
+async def scroll_feed(page, scrollable) -> int:
+    """Scroll the results feed once. Returns new listing count after scroll."""
+    before = await page.locator('div[role="feed"] div[role="article"]').count()
+    await scrollable.evaluate("el => el.scrollTo(0, el.scrollHeight)")
+    await asyncio.sleep(random.uniform(1.2, 2.0))
+    return await page.locator('div[role="feed"] div[role="article"]').count() - before
+
+
+async def collect_new_place_urls(
+    page, seen: set[str], limit: int
+) -> list[tuple[str, str]]:
     articles = page.locator('div[role="feed"] div[role="article"]')
     count = await articles.count()
     places: list[tuple[str, str]] = []
-    seen: set[str] = set()
 
     for i in range(count):
         if len(places) >= limit:
@@ -120,11 +125,27 @@ async def collect_place_urls(page, limit: int) -> list[tuple[str, str]]:
         href = await link.get_attribute("href")
         if not href or href in seen:
             continue
-        seen.add(href)
         label = (await link.get_attribute("aria-label")) or ""
         places.append((href, label))
 
     return places
+
+
+async def wait_for_place_panel(page, timeout_ms: int = 15000) -> None:
+    selectors = [
+        'button[data-item-id="address"]',
+        'button[aria-label^="Address:"]',
+        'div[role="main"] h1',
+        "h1",
+    ]
+    last_error = None
+    for selector in selectors:
+        try:
+            await page.wait_for_selector(selector, timeout=timeout_ms)
+            return
+        except PlaywrightTimeoutError as exc:
+            last_error = exc
+    raise last_error or PlaywrightTimeoutError("Place panel did not load")
 
 
 async def extract_website(page) -> str | None:
@@ -147,6 +168,24 @@ async def extract_website(page) -> str | None:
         if website:
             return website
     return None
+
+
+async def quick_website_check(detail_page, place_url: str) -> str | None:
+    await detail_page.goto(
+        maps_url_with_lang(place_url),
+        wait_until="domcontentloaded",
+        timeout=NAV_TIMEOUT_MS,
+    )
+    await dismiss_consent(detail_page)
+    try:
+        await detail_page.wait_for_selector(
+            'a[data-item-id="authority"], a[aria-label^="Website:"], '
+            'button[aria-label^="Website:"], h1',
+            timeout=QUICK_CHECK_TIMEOUT_MS,
+        )
+    except PlaywrightTimeoutError:
+        pass
+    return await extract_website(detail_page)
 
 
 async def extract_text(locator) -> str | None:
@@ -210,8 +249,6 @@ async def extract_place_details(page, list_label: str) -> dict:
     }
 
 
-# ==================== MAIN SCRAPER ====================
-
 def parse_city_from_address(address: str | None) -> str | None:
     if not address:
         return None
@@ -224,10 +261,51 @@ def parse_city_from_address(address: str | None) -> str | None:
     return None
 
 
+async def process_batch(
+    detail_page,
+    batch: list[tuple[str, str]],
+    seen: set[str],
+    leads: list[dict],
+    checked: int,
+) -> int:
+    """Check a batch of places. Returns updated checked count."""
+    with_website = 0
+    qualified = 0
+
+    for place_url, list_label in batch:
+        if len(leads) >= MAX_RESULTS or checked >= MAX_CHECK_LISTINGS:
+            break
+
+        seen.add(place_url)
+        checked += 1
+
+        try:
+            website = await quick_website_check(detail_page, place_url)
+            if website:
+                with_website += 1
+                print(f"  skip ({checked}): has website", flush=True)
+                continue
+
+            await wait_for_place_panel(detail_page)
+            lead = await extract_place_details(detail_page, list_label)
+            lead["google_maps_url"] = resolve_maps_url(lead)
+            leads.append(lead)
+            qualified += 1
+            print(f"  qualified ({checked}): {lead['name']}", flush=True)
+
+        except Exception as exc:
+            print(f"  error ({checked}): {exc}", flush=True)
+
+    print(
+        f"Batch done — checked {len(batch)}, {with_website} with websites, "
+        f"{qualified} qualified ({len(leads)}/{MAX_RESULTS} total)",
+        flush=True,
+    )
+    return checked
+
+
 async def scrape_google_maps():
-    """Main entry point: launches browser, performs search, filters no‑website leads."""
     async with async_playwright() as p:
-        # Launch browser with anti‑detection tweaks
         browser = await p.chromium.launch(
             headless=HEADLESS,
             slow_mo=SLOW_MO,
@@ -237,133 +315,95 @@ async def scrape_google_maps():
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-gpu",
-                "--window-size=1920,1080"
-            ]
+                "--window-size=1920,1080",
+            ],
         )
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
             locale="en-US",
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
             extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
         )
-        page = await context.new_page()
-        page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
-        page.set_default_timeout(30000)
+        search_page = await context.new_page()
+        detail_page = await context.new_page()
+        for page in (search_page, detail_page):
+            page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
+            page.set_default_timeout(30000)
 
         search_url = f"https://www.google.com/maps/search/{quote_plus(SEARCH_QUERY)}?hl=en"
         print(f"Opening Maps search: {SEARCH_QUERY}", flush=True)
-        await page.goto(search_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        await search_page.goto(search_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        await dismiss_consent(search_page)
+        await wait_for_results(search_page)
+        await asyncio.sleep(random.uniform(1.0, 2.0))
 
-        await dismiss_consent(page)
-        await wait_for_results(page)
-        await asyncio.sleep(random.uniform(1.5, 2.5))
+        scrollable = await get_scrollable(search_page)
+        seen: set[str] = set()
+        leads: list[dict] = []
+        checked = 0
+        stale_scrolls = 0
+        batch_num = 0
 
-        # ---------- INFINITE SCROLL ----------
-        scrollable = page.locator('div[role="feed"]')
-        if await scrollable.count() == 0:
-            scrollable = page.locator(
-                'div.m6QErb.DxyBCb.kA9KIf.dS8AEf, '
-                'div[role="feed"] >> xpath=ancestor::div[contains(@style, "overflow")]'
-            )
-        if await scrollable.count() == 0:
-            scrollable = page.locator(
-                'div[role="feed"] >> xpath=ancestor::div[@style and contains(@style, "overflow-y")]'
-            )
-        if await scrollable.count() == 0:
-            scrollable = page.locator("body")
-
-        listing_count = 0
-        last_height = 0
-        no_new_items_attempts = 0
-
-        print(f"Scrolling for up to {MAX_SCROLL_LISTINGS} listings...", flush=True)
-        while listing_count < MAX_SCROLL_LISTINGS:
-            await scrollable.evaluate("el => el.scrollTo(0, el.scrollHeight)")
-            await asyncio.sleep(random.uniform(1.5, 2.5))
-
-            listings = page.locator('div[role="feed"] div[role="article"]')
-            count = await listings.count()
-            if count > listing_count:
-                listing_count = count
-                no_new_items_attempts = 0
-            else:
-                no_new_items_attempts += 1
-                if no_new_items_attempts >= 5:
-                    break
-
-            new_height = await scrollable.evaluate("el => el.scrollHeight")
-            if new_height == last_height and no_new_items_attempts >= 2:
-                break
-            last_height = new_height
-
-        print(f"Loaded {listing_count} listings in sidebar.", flush=True)
-
-        # ---------- EXTRACT DATA FROM EACH LISTING ----------
-        # Visit place URLs directly — clicking cards is unreliable in headless CI.
-        place_urls = await collect_place_urls(page, MAX_SCROLL_LISTINGS)
         print(
-            f"Found {len(place_urls)} place URLs. Looking for up to {MAX_RESULTS} no-website leads...",
+            f"Target: {MAX_RESULTS} no-website leads (will check up to {MAX_CHECK_LISTINGS})",
             flush=True,
         )
 
-        leads = []
-        processed = 0
-        checked = 0
-
-        for idx, (place_url, list_label) in enumerate(place_urls):
-            if processed >= MAX_RESULTS:
-                break
-            checked += 1
-            try:
-                await page.goto(
-                    maps_url_with_lang(place_url),
-                    wait_until="domcontentloaded",
-                    timeout=NAV_TIMEOUT_MS,
-                )
-                await dismiss_consent(page)
-                await wait_for_place_panel(page)
-                await asyncio.sleep(random.uniform(0.8, 1.5))
-
-                website = await extract_website(page)
-                if website:
-                    print(f"Skipping {idx + 1}: has website {website}", flush=True)
-                    continue
-
-                lead = await extract_place_details(page, list_label)
-                lead["google_maps_url"] = resolve_maps_url(lead)
-                leads.append(lead)
-                processed += 1
-                print(f"Added no-website lead #{processed}: {lead['name']}", flush=True)
-
-            except Exception as e:
-                print(f"Error processing listing {idx + 1}: {e}", flush=True)
+        while len(leads) < MAX_RESULTS and checked < MAX_CHECK_LISTINGS:
+            remaining = MAX_CHECK_LISTINGS - checked
+            batch = await collect_new_place_urls(search_page, seen, remaining)
+            if not batch:
+                new_count = await scroll_feed(search_page, scrollable)
+                if new_count <= 0:
+                    stale_scrolls += 1
+                    if stale_scrolls >= 5:
+                        print("No more listings to load.", flush=True)
+                        break
+                else:
+                    stale_scrolls = 0
                 continue
 
-        if checked == 0:
-            print("No place URLs found in search results.", flush=True)
+            batch_num += 1
+            print(f"Batch {batch_num}: inspecting {len(batch)} new listings...", flush=True)
+            checked = await process_batch(
+                detail_page, batch, seen, leads, checked
+            )
+            stale_scrolls = 0
 
-        # ---------- SAVE RESULTS ----------
+            if len(leads) >= MAX_RESULTS or checked >= MAX_CHECK_LISTINGS:
+                break
+
+            await scroll_feed(search_page, scrollable)
+
+        print(
+            f"Finished — {len(leads)} qualified leads after checking {checked} listings.",
+            flush=True,
+        )
+
         root = Path(__file__).resolve().parent
         output_file = root / "no_website_leads.json"
         leads_file = root / "data" / "leads.json"
 
         with output_file.open("w", encoding="utf-8") as f:
             json.dump(leads, f, indent=2, ensure_ascii=False)
-        print(f"\n✅ Done! Found {len(leads)} leads without a website. Saved to {output_file.name}")
+        print(f"Saved {len(leads)} leads to {output_file.name}", flush=True)
 
         if leads:
             leads_file.parent.mkdir(parents=True, exist_ok=True)
             leads_file.write_text(json.dumps(leads, indent=2, ensure_ascii=False), encoding="utf-8")
-            print(f"Wrote {leads_file.relative_to(root)} for site generation")
+            print(f"Wrote {leads_file.relative_to(root)} for site generation", flush=True)
 
             try:
                 from dotenv import load_dotenv
 
                 load_dotenv(root / ".env")
                 replace_inventory(leads)
-                print("Synced scraped leads to Google Sheet (full inventory replace)")
+                print("Synced scraped leads to Google Sheet", flush=True)
             except Exception as exc:
-                print(f"Sheet sync skipped: {exc}")
+                print(f"Sheet sync skipped: {exc}", flush=True)
         elif os.environ.get("REQUIRE_LEADS", "").lower() in {"1", "true", "yes"}:
             raise SystemExit(
                 f"No no-website leads found after checking {checked} listings — pipeline stopped."
@@ -372,6 +412,5 @@ async def scrape_google_maps():
         await browser.close()
 
 
-# ==================== RUN ====================
 if __name__ == "__main__":
     asyncio.run(scrape_google_maps())
