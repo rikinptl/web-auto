@@ -1,0 +1,6 @@
+.env
+.venv/
+site/site-data.json
+no_website_leads.json
+*-service-account*.json
+credentials/
