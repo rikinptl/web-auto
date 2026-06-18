@@ -1,6 +1,7 @@
 """Build and validate Google Maps URLs for leads."""
 
-from urllib.parse import quote_plus
+import re
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 
 def build_maps_search_url(lead: dict) -> str:
@@ -44,3 +45,31 @@ def resolve_maps_url(lead: dict) -> str:
     if is_valid_maps_place_url(existing):
         return existing
     return build_maps_search_url(lead)
+
+
+def place_key(url: str) -> str:
+    """Stable dedupe key for the same Maps place across URL variants."""
+    url = (url or "").strip()
+    if not url:
+        return ""
+
+    for pattern in (
+        r"place_id:([^&!]+)",
+        r"1s(0x[a-f0-9]+:0x[a-f0-9]+)",
+        r"!3m1!4b1!4m[^!]*!3m[^!]*!1s([^!]+)",
+    ):
+        match = re.search(pattern, url, re.I)
+        if match:
+            return unquote(match.group(1)).strip().lower()
+
+    if "/place/" in url:
+        segment = url.split("/place/", 1)[1].split("/", 1)[0]
+        segment = unquote(segment.replace("+", " ")).strip().lower()
+        if segment and not segment.startswith("@"):
+            return segment
+
+    if "query=" in url:
+        query = parse_qs(urlparse(url).query).get("query", [""])[0]
+        return query.strip().lower()
+
+    return url.split("?")[0].rstrip("/").lower()

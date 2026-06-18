@@ -6,13 +6,91 @@ write instead of per-row requests (Google Sheets limit: ~300 requests/min).
 
 import json
 import os
+import re
 import time
 
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError
 
-from maps_url import resolve_maps_url
+from maps_url import place_key, resolve_maps_url
+
+def normalize_phone(phone: str) -> str:
+    return re.sub(r"\D", "", phone or "")
+
+
+def normalize_name(name: str) -> str:
+    return re.sub(r"\s+", " ", (name or "").strip().lower())
+
+
+def record_to_lead(row: dict) -> dict:
+    return {
+        "name": row.get("Business Name", ""),
+        "niche": row.get("Niche", ""),
+        "category": row.get("Niche", ""),
+        "phone": row.get("Phone", ""),
+        "city": row.get("City", ""),
+        "scraped_status": row.get("Scraped Status", ""),
+        "copy_status": row.get("DeepSeek Copy Status", ""),
+        "live_url": row.get("Live URL", ""),
+        "google_maps_url": row.get("Google Maps URL", ""),
+    }
+
+
+def load_inventory() -> list[dict]:
+    """Read all leads currently stored in the Google Sheet."""
+    worksheet = get_worksheet()
+    ensure_headers(worksheet)
+    records = _with_retry(worksheet.get_all_records, "get_all_records")
+    leads: list[dict] = []
+    for row in records:
+        lead = record_to_lead(row)
+        if not lead.get("name"):
+            continue
+        if is_mock_lead(lead):
+            continue
+        leads.append(lead)
+    return leads
+
+
+class InventorySkipIndex:
+    """Fast lookups to skip businesses already present in the sheet."""
+
+    def __init__(self, leads: list[dict]):
+        self.maps_keys: set[str] = set()
+        self.name_phone: set[tuple[str, str]] = set()
+
+        for lead in leads:
+            maps_key = place_key(resolve_maps_url(lead))
+            if maps_key:
+                self.maps_keys.add(maps_key)
+
+            name = normalize_name(lead.get("name", ""))
+            phone = normalize_phone(lead.get("phone", ""))
+            if name:
+                self.name_phone.add((name, phone))
+
+    def has_maps_url(self, url: str) -> bool:
+        key = place_key(url)
+        return bool(key and key in self.maps_keys)
+
+    def has_lead(self, lead: dict) -> bool:
+        name = normalize_name(lead.get("name", ""))
+        phone = normalize_phone(lead.get("phone", ""))
+        if name and (name, phone) in self.name_phone:
+            return True
+        maps_key = place_key(resolve_maps_url(lead))
+        return bool(maps_key and maps_key in self.maps_keys)
+
+    def register_lead(self, lead: dict) -> None:
+        """Track a newly scraped lead so later batches in the same run skip it."""
+        maps_key = place_key(resolve_maps_url(lead))
+        if maps_key:
+            self.maps_keys.add(maps_key)
+        name = normalize_name(lead.get("name", ""))
+        phone = normalize_phone(lead.get("phone", ""))
+        if name:
+            self.name_phone.add((name, phone))
 
 HEADERS = [
     "Business Name",

@@ -26,7 +26,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 from maps_url import resolve_maps_url  # noqa: E402
-from sheets import replace_inventory  # noqa: E402
+from sheets import InventorySkipIndex, load_inventory, upsert_leads  # noqa: E402
 
 # ==================== CONFIGURATION ====================
 SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "plumber near Dallas, TX")
@@ -110,7 +110,10 @@ async def scroll_feed(page, scrollable) -> int:
 
 
 async def collect_new_place_urls(
-    page, seen: set[str], limit: int
+    page,
+    seen: set[str],
+    limit: int,
+    skip_index: InventorySkipIndex | None = None,
 ) -> list[tuple[str, str]]:
     articles = page.locator('div[role="feed"] div[role="article"]')
     count = await articles.count()
@@ -124,6 +127,9 @@ async def collect_new_place_urls(
             continue
         href = await link.get_attribute("href")
         if not href or href in seen:
+            continue
+        if skip_index and skip_index.has_maps_url(href):
+            seen.add(href)
             continue
         label = (await link.get_attribute("aria-label")) or ""
         places.append((href, label))
@@ -267,9 +273,11 @@ async def process_batch(
     seen: set[str],
     leads: list[dict],
     checked: int,
+    skip_index: InventorySkipIndex | None = None,
 ) -> int:
     """Check a batch of places. Returns updated checked count."""
     with_website = 0
+    in_inventory = 0
     qualified = 0
 
     for place_url, list_label in batch:
@@ -278,6 +286,11 @@ async def process_batch(
 
         seen.add(place_url)
         checked += 1
+
+        if skip_index and skip_index.has_maps_url(place_url):
+            in_inventory += 1
+            print(f"  skip ({checked}): already in sheet", flush=True)
+            continue
 
         try:
             website = await quick_website_check(detail_page, place_url)
@@ -289,7 +302,15 @@ async def process_batch(
             await wait_for_place_panel(detail_page)
             lead = await extract_place_details(detail_page, list_label)
             lead["google_maps_url"] = resolve_maps_url(lead)
+
+            if skip_index and skip_index.has_lead(lead):
+                in_inventory += 1
+                print(f"  skip ({checked}): already in sheet ({lead['name']})", flush=True)
+                continue
+
             leads.append(lead)
+            if skip_index:
+                skip_index.register_lead(lead)
             qualified += 1
             print(f"  qualified ({checked}): {lead['name']}", flush=True)
 
@@ -297,14 +318,32 @@ async def process_batch(
             print(f"  error ({checked}): {exc}", flush=True)
 
     print(
-        f"Batch done — checked {len(batch)}, {with_website} with websites, "
-        f"{qualified} qualified ({len(leads)}/{MAX_RESULTS} total)",
+        f"Batch done — checked {len(batch)}, {in_inventory} in sheet, "
+        f"{with_website} with websites, {qualified} new qualified "
+        f"({len(leads)}/{MAX_RESULTS} total)",
         flush=True,
     )
     return checked
 
 
 async def scrape_google_maps():
+    skip_index: InventorySkipIndex | None = None
+    existing_count = 0
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(Path(__file__).resolve().parent / ".env")
+        existing = load_inventory()
+        existing_count = len(existing)
+        if existing:
+            skip_index = InventorySkipIndex(existing)
+            print(
+                f"Loaded {existing_count} lead(s) from Google Sheet — will skip already scraped.",
+                flush=True,
+            )
+    except Exception as exc:
+        print(f"Sheet inventory not loaded (will scrape without skip list): {exc}", flush=True)
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=HEADLESS,
@@ -348,13 +387,16 @@ async def scrape_google_maps():
         batch_num = 0
 
         print(
-            f"Target: {MAX_RESULTS} no-website leads (will check up to {MAX_CHECK_LISTINGS})",
+            f"Target: {MAX_RESULTS} new no-website leads "
+            f"({existing_count} already in sheet; will check up to {MAX_CHECK_LISTINGS})",
             flush=True,
         )
 
         while len(leads) < MAX_RESULTS and checked < MAX_CHECK_LISTINGS:
             remaining = MAX_CHECK_LISTINGS - checked
-            batch = await collect_new_place_urls(search_page, seen, remaining)
+            batch = await collect_new_place_urls(
+                search_page, seen, remaining, skip_index
+            )
             if not batch:
                 new_count = await scroll_feed(search_page, scrollable)
                 if new_count <= 0:
@@ -369,7 +411,7 @@ async def scrape_google_maps():
             batch_num += 1
             print(f"Batch {batch_num}: inspecting {len(batch)} new listings...", flush=True)
             checked = await process_batch(
-                detail_page, batch, seen, leads, checked
+                detail_page, batch, seen, leads, checked, skip_index
             )
             stale_scrolls = 0
 
@@ -379,7 +421,7 @@ async def scrape_google_maps():
             await scroll_feed(search_page, scrollable)
 
         print(
-            f"Finished — {len(leads)} qualified leads after checking {checked} listings.",
+            f"Finished — {len(leads)} new qualified lead(s) after checking {checked} listings.",
             flush=True,
         )
 
@@ -397,16 +439,18 @@ async def scrape_google_maps():
             print(f"Wrote {leads_file.relative_to(root)} for site generation", flush=True)
 
             try:
-                from dotenv import load_dotenv
-
-                load_dotenv(root / ".env")
-                replace_inventory(leads)
-                print("Synced scraped leads to Google Sheet", flush=True)
+                stats = upsert_leads(leads)
+                print(
+                    f"Merged {len(leads)} new lead(s) into Google Sheet "
+                    f"(updated {stats['updated']}, appended {stats['appended']})",
+                    flush=True,
+                )
             except Exception as exc:
                 print(f"Sheet sync skipped: {exc}", flush=True)
         elif os.environ.get("REQUIRE_LEADS", "").lower() in {"1", "true", "yes"}:
             raise SystemExit(
-                f"No no-website leads found after checking {checked} listings — pipeline stopped."
+                f"No new no-website leads found after checking {checked} listings "
+                f"({existing_count} already in sheet) — pipeline stopped."
             )
 
         await browser.close()
