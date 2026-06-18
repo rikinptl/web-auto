@@ -1,4 +1,5 @@
 name: Build and Deploy to GitHub Pages
+run-name: Build and deploy lead site
 
 on:
   workflow_dispatch:
