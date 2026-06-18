@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from render_site import render_site  # noqa: E402
-from sheets import upsert_lead  # noqa: E402
+from sheets import is_mock_lead, upsert_lead  # noqa: E402
 
 LEADS_FILE = ROOT / "data" / "leads.json"
 EXAMPLE_DATA = ROOT / "data" / "site-data.example.json"
@@ -102,11 +102,16 @@ Rules:
 def load_lead() -> dict:
     leads = json.loads(LEADS_FILE.read_text(encoding="utf-8"))
     if not leads:
-        raise SystemExit("No leads found in data/leads.json")
+        raise SystemExit(
+            "No leads in data/leads.json. Use Actions → Lead pipeline → Run workflow to scrape real businesses."
+        )
     index = int(os.environ.get("LEAD_INDEX", "0"))
     if index < 0 or index >= len(leads):
         raise SystemExit(f"LEAD_INDEX {index} out of range (0-{len(leads) - 1})")
-    return leads[index]
+    lead = leads[index]
+    if is_mock_lead(lead):
+        raise SystemExit(f"Refusing mock lead: {lead.get('name')}. Scrape real leads via Run workflow.")
+    return lead
 
 
 def call_deepseek(lead: dict, api_key: str) -> dict:

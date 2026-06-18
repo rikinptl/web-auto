@@ -84,6 +84,16 @@ def ensure_headers(worksheet) -> None:
     _with_retry(_update_headers, "ensure_headers")
 
 
+def is_mock_lead(lead: dict) -> bool:
+    name = (lead.get("name") or "").strip().lower()
+    phone = (lead.get("phone") or "").strip()
+    if "joe's plumbing" in name or "joes plumbing" in name:
+        return True
+    if phone in {"(512) 555-0142", "512-555-0142", "5125550142"}:
+        return True
+    return False
+
+
 def lead_to_row(lead: dict) -> list:
     return [
         lead.get("name", ""),
@@ -119,6 +129,8 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
     rows_to_append = []
 
     for lead in leads:
+        if is_mock_lead(lead):
+            raise ValueError(f"Refusing mock lead data: {lead.get('name')}")
         key = (lead.get("name", ""), lead.get("phone", ""))
         values = lead_to_row(lead)
         existing_row = row_index.get(key)
@@ -150,5 +162,41 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
 
 def upsert_lead(lead: dict) -> int:
     """Upsert a single lead (wraps batch upsert for pipeline steps)."""
+    if is_mock_lead(lead):
+        raise ValueError(f"Refusing mock lead data: {lead.get('name')}")
     result = upsert_leads([lead])
     return result["updated"] + result["appended"]
+
+
+def replace_inventory(leads: list[dict]) -> None:
+    """Replace all sheet data rows with scraped leads (removes stale/mock rows)."""
+    for lead in leads:
+        if is_mock_lead(lead):
+            raise ValueError(f"Refusing mock lead data: {lead.get('name')}")
+
+    worksheet = get_worksheet()
+    ensure_headers(worksheet)
+    row_count = len(_with_retry(worksheet.get_all_records, "get_all_records"))
+
+    if row_count:
+
+        def _clear_rows():
+            worksheet.batch_clear([f"A2:{LAST_COL}{row_count + 1}"])
+
+        _with_retry(_clear_rows, "batch_clear")
+
+    if not leads:
+        print("Sheet inventory cleared (header only)")
+        return
+
+    rows = [lead_to_row(lead) for lead in leads]
+
+    def _write_rows():
+        worksheet.update(
+            values=rows,
+            range_name=f"A2:{LAST_COL}{len(rows) + 1}",
+            value_input_option="USER_ENTERED",
+        )
+
+    _with_retry(_write_rows, "replace_inventory")
+    print(f"Replaced sheet inventory with {len(rows)} real lead(s)")

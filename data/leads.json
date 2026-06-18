@@ -1,15 +1,1 @@
-[
-  {
-    "name": "Joe's Plumbing Co.",
-    "niche": "Plumber",
-    "phone": "(512) 555-0142",
-    "city": "Austin, TX",
-    "address": "4821 Shoal Creek Blvd, Austin, TX 78756",
-    "rating": 4.8,
-    "reviews": 47,
-    "scraped_status": "Done",
-    "copy_status": "Pending",
-    "live_url": "",
-    "google_maps_url": ""
-  }
-]
+[]

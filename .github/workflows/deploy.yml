@@ -1,5 +1,5 @@
 name: Lead pipeline
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('Scrape + deploy {0} in {1}', inputs.niche, inputs.city) || 'Build and deploy lead site' }}
+run-name: ${{ format('Scrape + deploy {0} in {1}', inputs.niche, inputs.city) }}
 
 on:
   workflow_dispatch:
@@ -55,17 +55,6 @@ on:
         description: Max Google Maps listings to process
         required: true
         default: "5"
-  push:
-    branches: [main]
-    paths:
-      - "config/**"
-      - "data/**"
-      - "scripts/**"
-      - "templates/**"
-      - "site/assets/**"
-      - "scrap.py"
-      - ".github/workflows/**"
-      - "requirements.txt"
 
 permissions:
   contents: read
@@ -117,6 +106,7 @@ jobs:
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
 
       - name: Generate site copy with DeepSeek
+        if: github.event_name == 'workflow_dispatch'
         run: python scripts/generate_site.py
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -125,11 +115,13 @@ jobs:
           LEAD_INDEX: "0"
 
       - name: Upload Pages artifact
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
       - name: Upload leads data
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: leads-data
@@ -138,6 +130,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
