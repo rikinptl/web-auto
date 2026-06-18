@@ -1,0 +1,199 @@
+{
+  "default_niche": "plumber",
+  "default_city": "dallas",
+  "niches": [
+    {
+      "id": "plumber",
+      "label": "Plumber",
+      "search_term": "plumber"
+    },
+    {
+      "id": "electrician",
+      "label": "Electrician",
+      "search_term": "electrician"
+    },
+    {
+      "id": "hvac",
+      "label": "HVAC / AC Repair",
+      "search_term": "HVAC contractor"
+    },
+    {
+      "id": "carpenter",
+      "label": "Carpenter",
+      "search_term": "carpenter"
+    },
+    {
+      "id": "mechanic",
+      "label": "Auto Mechanic",
+      "search_term": "auto repair shop"
+    },
+    {
+      "id": "roofer",
+      "label": "Roofer",
+      "search_term": "roofing contractor"
+    },
+    {
+      "id": "landscaper",
+      "label": "Landscaper / Lawn Care",
+      "search_term": "landscaping company"
+    },
+    {
+      "id": "painter",
+      "label": "Painter",
+      "search_term": "house painter"
+    },
+    {
+      "id": "locksmith",
+      "label": "Locksmith",
+      "search_term": "locksmith"
+    },
+    {
+      "id": "house_cleaning",
+      "label": "House Cleaning",
+      "search_term": "house cleaning service"
+    },
+    {
+      "id": "pest_control",
+      "label": "Pest Control",
+      "search_term": "pest control"
+    },
+    {
+      "id": "garage_door",
+      "label": "Garage Door Repair",
+      "search_term": "garage door repair"
+    },
+    {
+      "id": "fence",
+      "label": "Fence Contractor",
+      "search_term": "fence contractor"
+    },
+    {
+      "id": "concrete",
+      "label": "Concrete Contractor",
+      "search_term": "concrete contractor"
+    },
+    {
+      "id": "handyman",
+      "label": "Handyman",
+      "search_term": "handyman"
+    },
+    {
+      "id": "towing",
+      "label": "Towing Service",
+      "search_term": "towing service"
+    },
+    {
+      "id": "tree_service",
+      "label": "Tree Service",
+      "search_term": "tree service"
+    },
+    {
+      "id": "appliance_repair",
+      "label": "Appliance Repair",
+      "search_term": "appliance repair"
+    },
+    {
+      "id": "pool_service",
+      "label": "Pool Service",
+      "search_term": "pool cleaning service"
+    },
+    {
+      "id": "pressure_washing",
+      "label": "Pressure Washing",
+      "search_term": "pressure washing"
+    }
+  ],
+  "cities": [
+    {
+      "id": "dallas",
+      "label": "Dallas, TX",
+      "phase": 1,
+      "search_term": "Dallas, TX"
+    },
+    {
+      "id": "fort_worth",
+      "label": "Fort Worth, TX",
+      "phase": 1,
+      "search_term": "Fort Worth, TX"
+    },
+    {
+      "id": "arlington",
+      "label": "Arlington, TX",
+      "phase": 1,
+      "search_term": "Arlington, TX"
+    },
+    {
+      "id": "plano",
+      "label": "Plano, TX",
+      "phase": 1,
+      "search_term": "Plano, TX"
+    },
+    {
+      "id": "frisco",
+      "label": "Frisco, TX",
+      "phase": 1,
+      "search_term": "Frisco, TX"
+    },
+    {
+      "id": "irving",
+      "label": "Irving, TX",
+      "phase": 1,
+      "search_term": "Irving, TX"
+    },
+    {
+      "id": "garland",
+      "label": "Garland, TX",
+      "phase": 1,
+      "search_term": "Garland, TX"
+    },
+    {
+      "id": "mckinney",
+      "label": "McKinney, TX",
+      "phase": 1,
+      "search_term": "McKinney, TX"
+    },
+    {
+      "id": "denton",
+      "label": "Denton, TX",
+      "phase": 1,
+      "search_term": "Denton, TX"
+    },
+    {
+      "id": "richardson",
+      "label": "Richardson, TX",
+      "phase": 1,
+      "search_term": "Richardson, TX"
+    },
+    {
+      "id": "austin",
+      "label": "Austin, TX",
+      "phase": 2,
+      "search_term": "Austin, TX"
+    },
+    {
+      "id": "houston",
+      "label": "Houston, TX",
+      "phase": 2,
+      "search_term": "Houston, TX"
+    },
+    {
+      "id": "san_antonio",
+      "label": "San Antonio, TX",
+      "phase": 2,
+      "search_term": "San Antonio, TX"
+    },
+    {
+      "id": "oklahoma_city",
+      "label": "Oklahoma City, OK",
+      "phase": 3,
+      "search_term": "Oklahoma City, OK"
+    },
+    {
+      "id": "tulsa",
+      "label": "Tulsa, OK",
+      "phase": 3,
+      "search_term": "Tulsa, OK"
+    }
+  ],
+  "expansion_notes": "Phase 1: DFW metro. Use workflow scrape_mode=all_niches to search every niche in parallel (default cap 50), then deploy."
+}
