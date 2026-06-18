@@ -19,9 +19,14 @@ import asyncio
 import json
 import random
 import re
+import sys
 from datetime import datetime
+from pathlib import Path
 
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
+from maps_url import resolve_maps_url  # noqa: E402
 
 # ==================== CONFIGURATION ====================
 SEARCH_QUERY = "plumber near Austin, TX"   # Change this to your target niche + city
@@ -148,6 +153,11 @@ async def scrape_google_maps():
                 await listing.click()
                 await asyncio.sleep(random.uniform(1.0, 2.5))
 
+                try:
+                    await page.wait_for_url(re.compile(r"/maps/place/"), timeout=8000)
+                except PlaywrightTimeoutError:
+                    pass
+
                 # Wait for the details panel to appear
                 panel = page.locator('div[role="main"] div[role="feed"]')  # sometimes the panel is a feed too
                 # Actually the info panel is often a div with class "m6QErb DxyBCb kA9KIf dS8AEf" but we'll use a more robust locator
@@ -208,8 +218,6 @@ async def scrape_google_maps():
                 address = await address_elem.text_content() if await address_elem.count() > 0 else None
                 address = address.strip() if address else None
 
-                maps_url = page.url if "google.com/maps" in page.url else None
-
                 # Rating & Reviews
                 rating_elem = page.locator('span[aria-hidden="true"]:has-text("★")')
                 rating = None
@@ -241,11 +249,12 @@ async def scrape_google_maps():
                     "rating": rating,
                     "reviews": reviews,
                     "website": None,
-                    "google_maps_url": maps_url,
+                    "google_maps_url": page.url if "google.com/maps" in page.url else "",
                     "scraped_status": "Done",
                     "copy_status": "Pending",
                     "live_url": "",
                 }
+                lead["google_maps_url"] = resolve_maps_url(lead)
                 leads.append(lead)
                 processed += 1
                 print(f"✅ Added no‑website lead #{processed}: {name}")

@@ -6,6 +6,8 @@ import os
 import gspread
 from google.oauth2.service_account import Credentials
 
+from maps_url import resolve_maps_url
+
 HEADERS = [
     "Business Name",
     "Niche",
@@ -62,7 +64,7 @@ def lead_to_row(lead: dict) -> list:
         lead.get("scraped_status", "Done"),
         lead.get("copy_status", "Pending"),
         lead.get("live_url", ""),
-        lead.get("google_maps_url", ""),
+        resolve_maps_url(lead),
     ]
 
 
