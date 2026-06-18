@@ -39,9 +39,9 @@ data/leads.json          # Scraped leads array (empty in repo; populated by CI)
 1. Manual dispatch: pick **niche**, **city**, **max_results**
 2. `scrap.py` — scroll Maps in batches, fast website check, full extract only for no-website leads; stops when `MAX_RESULTS` qualified or `MAX_CHECK_LISTINGS` checked
 3. `replace_inventory()` on scrape — **reads sheet first**, skips known businesses, **upserts** only new leads (does not wipe sheet)
-4. `generate_site.py` — DeepSeek copy for lead index `0`
-5. `deploy_org_site.py` — creates/updates `kem-llc/{business-slug}` repo, enables Pages
-6. `update_sheet.py` — writes per-lead `live_url` (e.g. `https://kem-llc.github.io/true-line-plumbing-dallas-8339/`)
+4. `generate_site.py` — DeepSeek copy per lead (parallel matrix jobs)
+5. `deploy_org_site.py` — one `kem-llc/{slug}` repo per lead (parallel, up to 5 at once)
+6. `update_sheet.py` — writes each lead's `live_url` + copy Done
 
 ### Google Sheet columns
 

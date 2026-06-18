@@ -55,6 +55,10 @@ on:
         description: Max Google Maps listings to process
         required: true
         default: "5"
+      deploy_pending_only:
+        description: Skip scrape — deploy sites for sheet rows missing live URL
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,9 +68,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  scrape:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      lead_indices: ${{ steps.matrix.outputs.lead_indices }}
+      lead_count: ${{ steps.matrix.outputs.lead_count }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,9 +94,18 @@ jobs:
           CITY_ID: ${{ inputs.city }}
 
       - name: Install Playwright Chromium
+        if: ${{ !inputs.deploy_pending_only }}
         run: python -m playwright install chromium --with-deps
 
+      - name: Export pending leads from sheet
+        if: inputs.deploy_pending_only
+        run: python scripts/export_pending_leads.py
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+
       - name: Scrape Google Maps
+        if: ${{ !inputs.deploy_pending_only }}
         run: python scrap.py
         env:
           SEARCH_QUERY: ${{ steps.search.outputs.search_query }}
@@ -101,13 +117,52 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
 
+      - name: Prepare deploy matrix
+        id: matrix
+        run: python scripts/write_lead_matrix.py
+
+      - name: Upload leads data
+        uses: actions/upload-artifact@v4
+        with:
+          name: leads-data
+          path: data/leads.json
+          retention-days: 7
+
+  deploy-sites:
+    needs: scrape
+    if: needs.scrape.outputs.lead_count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        lead_index: ${{ fromJSON(needs.scrape.outputs.lead_indices) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download leads data
+        uses: actions/download-artifact@v4
+        with:
+          name: leads-data
+          path: data
+
       - name: Generate site copy with DeepSeek
         run: python scripts/generate_site.py
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
-          LEAD_INDEX: "0"
+          LEAD_INDEX: ${{ matrix.lead_index }}
 
       - name: Deploy site to kem-llc org repo
         id: org_deploy
@@ -115,7 +170,7 @@ jobs:
         env:
           DEPLOY_ORG: ${{ vars.DEPLOY_ORG }}
           ORG_DEPLOY_TOKEN: ${{ secrets.ORG_DEPLOY_TOKEN }}
-          LEAD_INDEX: "0"
+          LEAD_INDEX: ${{ matrix.lead_index }}
 
       - name: Update Google Sheet with live URL
         run: python scripts/update_sheet.py
@@ -124,3 +179,4 @@ jobs:
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
           LIVE_URL: ${{ steps.org_deploy.outputs.live_url }}
           COPY_STATUS: Done
+          LEAD_INDEX: ${{ matrix.lead_index }}

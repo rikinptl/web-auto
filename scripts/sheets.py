@@ -53,6 +53,17 @@ def load_inventory() -> list[dict]:
     return leads
 
 
+def load_pending_deploy_leads() -> list[dict]:
+    """Leads in the sheet that still need copy and/or a live site URL."""
+    pending: list[dict] = []
+    for lead in load_inventory():
+        copy_done = (lead.get("copy_status") or "").strip().lower() == "done"
+        has_live = (lead.get("live_url") or "").strip().startswith("http")
+        if not copy_done or not has_live:
+            pending.append(lead)
+    return pending
+
+
 class InventorySkipIndex:
     """Fast lookups to skip businesses already present in the sheet."""
 

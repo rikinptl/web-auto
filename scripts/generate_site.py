@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from render_site import render_site  # noqa: E402
-from sheets import is_mock_lead, upsert_lead  # noqa: E402
+from sheets import is_mock_lead  # noqa: E402
 
 LEADS_FILE = ROOT / "data" / "leads.json"
 EXAMPLE_DATA = ROOT / "data" / "site-data.example.json"
@@ -203,14 +203,6 @@ def main() -> None:
 
     render_site(site_data)
     print(f"Wrote {OUTPUT_FILE} and rendered HTML pages")
-
-    lead["copy_status"] = "Done"
-    try:
-        upsert_lead(lead)
-    except ValueError as exc:
-        print(f"Skipping sheet sync: {exc}")
-    except Exception as exc:
-        print(f"Warning: sheet sync failed: {exc}")
 
 
 if __name__ == "__main__":
