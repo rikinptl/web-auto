@@ -65,11 +65,16 @@ export async function fetchDeepSeekBalance(): Promise<{
 
 export function estimateAiUsage(copyDone: number): Pick<
   AiCostStats,
-  "sitesWithCopy" | "estimatedTokens" | "estimatedSpendUsd" | "costPerSiteUsd"
+  | "sitesWithCopy"
+  | "estimatedTokens"
+  | "estimatedSpendUsd"
+  | "costPerSiteUsd"
+  | "tokensPerSite"
+  | "sitesAffordable"
 > {
   const costPerSiteUsd = Number.parseFloat(process.env.DEEPSEEK_EST_COST_PER_SITE ?? "0.03");
   const tokensPerSite = Number.parseInt(process.env.DEEPSEEK_EST_TOKENS_PER_SITE ?? "4500", 10);
-  const safeCost = Number.isFinite(costPerSiteUsd) ? costPerSiteUsd : 0.03;
+  const safeCost = Number.isFinite(costPerSiteUsd) && costPerSiteUsd > 0 ? costPerSiteUsd : 0.03;
   const safeTokens = Number.isFinite(tokensPerSite) ? tokensPerSite : 4500;
 
   return {
@@ -77,7 +82,14 @@ export function estimateAiUsage(copyDone: number): Pick<
     estimatedTokens: copyDone * safeTokens,
     estimatedSpendUsd: Math.round(copyDone * safeCost * 100) / 100,
     costPerSiteUsd: safeCost,
+    tokensPerSite: safeTokens,
+    sitesAffordable: null,
   };
+}
+
+function affordableSites(balanceUsd: number | null, costPerSiteUsd: number): number | null {
+  if (balanceUsd === null || costPerSiteUsd <= 0) return null;
+  return Math.floor(balanceUsd / costPerSiteUsd);
 }
 
 export async function buildAiCostStats(copyDone: number): Promise<AiCostStats> {
@@ -118,6 +130,7 @@ export async function buildAiCostStats(copyDone: number): Promise<AiCostStats> {
       isAvailable: balance.isAvailable,
       error: null,
       ...estimate,
+      sitesAffordable: affordableSites(balance.totalUsd, estimate.costPerSiteUsd),
     };
   } catch (e) {
     return {

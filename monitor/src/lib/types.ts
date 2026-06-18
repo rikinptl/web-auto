@@ -46,6 +46,9 @@ export type AiCostStats = {
   estimatedTokens: number;
   estimatedSpendUsd: number;
   costPerSiteUsd: number;
+  tokensPerSite: number;
+  /** How many more sites DeepSeek balance can cover at est. cost/site */
+  sitesAffordable: number | null;
   error: string | null;
 };
 

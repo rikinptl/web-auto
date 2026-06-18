@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DashboardData } from "@/lib/types";
 import { LiveSitesModal, liveSiteCount } from "@/components/live-sites-modal";
-import { AiCostPanel } from "@/components/ai-cost-panel";
+import { AiDashboard } from "@/components/ai-dashboard";
+import { DashboardTabs, type DashboardTab } from "@/components/dashboard-tabs";
 import { BreakdownCharts } from "@/components/breakdown-charts";
 import { LeadsTable } from "@/components/leads-table";
 import { MarketCoverageGrid } from "@/components/market-coverage";
@@ -17,6 +18,7 @@ export function DashboardShell() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveSitesOpen, setLiveSitesOpen] = useState(false);
+  const [tab, setTab] = useState<DashboardTab>("pipeline");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,6 +124,9 @@ export function DashboardShell() {
             </button>
           </div>
         </div>
+        <div className="mx-auto max-w-[1400px] border-t border-white/[0.04] px-4 py-3 md:px-6">
+          <DashboardTabs active={tab} onChange={setTab} />
+        </div>
       </header>
 
       <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-6 md:px-6 md:py-8">
@@ -142,20 +147,24 @@ export function DashboardShell() {
           marketsTotal={marketsTotal}
         />
 
-        <AiCostPanel aiCost={data.aiCost} />
+        {tab === "pipeline" ? (
+          <>
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className="xl:col-span-1">
+                <PipelineFunnel stats={data.stats} />
+              </div>
+              <div className="xl:col-span-2">
+                <BreakdownCharts byNiche={data.byNiche} byCity={data.byCity} />
+              </div>
+            </div>
 
-        <div className="grid gap-4 xl:grid-cols-3">
-          <div className="xl:col-span-1">
-            <PipelineFunnel stats={data.stats} />
-          </div>
-          <div className="xl:col-span-2">
-            <BreakdownCharts byNiche={data.byNiche} byCity={data.byCity} />
-          </div>
-        </div>
-
-        <RunsTable runs={data.runs} />
-        <LeadsTable leads={data.leads} />
-        <MarketCoverageGrid coverage={data.coverage} />
+            <RunsTable runs={data.runs} />
+            <LeadsTable leads={data.leads} />
+            <MarketCoverageGrid coverage={data.coverage} />
+          </>
+        ) : (
+          <AiDashboard aiCost={data.aiCost} stats={data.stats} />
+        )}
 
         <footer className="border-t border-white/[0.06] pt-6 text-center text-xs text-ink-600">
           Deploy branch: <span className="font-mono text-ink-400">monitor</span>
