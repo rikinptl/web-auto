@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from render_site import render_site  # noqa: E402
 from sheets import is_mock_lead  # noqa: E402
+from text_clean import strip_icon_glyphs  # noqa: E402
 
 LEADS_FILE = ROOT / "data" / "leads.json"
 EXAMPLE_DATA = ROOT / "data" / "site-data.example.json"
@@ -162,8 +163,8 @@ def call_deepseek(lead: dict, api_key: str) -> dict:
 def merge_lead_facts(lead: dict, copy: dict) -> dict:
     business = copy.setdefault("business", {})
     business.setdefault("name", lead["name"])
-    business["phone"] = lead.get("phone", business.get("phone", ""))
-    business["address"] = lead.get("address", business.get("address", ""))
+    business["phone"] = strip_icon_glyphs(lead.get("phone", business.get("phone", "")))
+    business["address"] = strip_icon_glyphs(lead.get("address", business.get("address", "")))
     business["city"] = lead.get("city", business.get("city", ""))
     business["niche"] = lead.get("niche") or lead.get("category", business.get("niche", ""))
 

@@ -1,11 +1,20 @@
 name: Lead pipeline
-run-name: ${{ format('Scrape + deploy {0} in {1}', inputs.niche, inputs.city) }}
+run-name: >-
+  ${{ inputs.deploy_pending_only && 'Deploy pending leads' || (inputs.scrape_mode == 'all_niches' && format('Parallel scrape ({0} max) in {1}', inputs.max_results, inputs.city) || format('Scrape + deploy {0} in {1}', inputs.niche, inputs.city)) }}
 
 on:
   workflow_dispatch:
     inputs:
+      scrape_mode:
+        description: Scrape all niches in parallel, or one niche only
+        type: choice
+        required: true
+        default: all_niches
+        options:
+          - all_niches
+          - single
       niche:
-        description: Small business niche to target
+        description: Niche (only when scrape_mode = single)
         type: choice
         required: true
         default: plumber
@@ -31,7 +40,7 @@ on:
           - pool_service
           - pressure_washing
       city:
-        description: Target city (DFW first, then expand)
+        description: Target city
         type: choice
         required: true
         default: dallas
@@ -52,9 +61,9 @@ on:
           - oklahoma_city
           - tulsa
       max_results:
-        description: Max Google Maps listings to process
+        description: Max qualified leads to collect (all_niches) or scrape (single)
         required: true
-        default: "5"
+        default: "50"
       deploy_pending_only:
         description: Skip scrape — deploy sites for sheet rows missing live URL
         type: boolean
@@ -68,7 +77,126 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-niches:
+    if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches' }}
+    runs-on: ubuntu-latest
+    outputs:
+      niche_ids: ${{ steps.matrix.outputs.niche_ids }}
+      per_niche_max: ${{ steps.matrix.outputs.per_niche_max }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build niche matrix
+        id: matrix
+        run: python scripts/write_niche_matrix.py
+        env:
+          MAX_RESULTS: ${{ inputs.max_results }}
+
+  scrape-niche:
+    needs: prepare-niches
+    if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        niche_id: ${{ fromJSON(needs.prepare-niches.outputs.niche_ids) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve search query
+        id: search
+        run: python scripts/resolve_search.py
+        env:
+          NICHE_ID: ${{ matrix.niche_id }}
+          CITY_ID: ${{ inputs.city }}
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install chromium --with-deps
+
+      - name: Scrape Google Maps
+        run: python scrap.py
+        env:
+          SEARCH_QUERY: ${{ steps.search.outputs.search_query }}
+          NICHE_ID: ${{ matrix.niche_id }}
+          NICHE_LABEL: ${{ steps.search.outputs.niche_label }}
+          MAX_RESULTS: ${{ needs.prepare-niches.outputs.per_niche_max }}
+          LEADS_OUTPUT: data/scrape-${{ matrix.niche_id }}.json
+          SKIP_SHEET_UPSERT: "true"
+          REQUIRE_LEADS: "false"
+          HEADLESS: "true"
+          SLOW_MO: "0"
+          MAX_CHECK_LISTINGS: "60"
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+
+      - name: Upload niche scrape
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-${{ matrix.niche_id }}
+          path: data/scrape-${{ matrix.niche_id }}.json
+          if-no-files-found: warn
+          retention-days: 3
+
+  merge-scrape:
+    needs: scrape-niche
+    if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      lead_indices: ${{ steps.matrix.outputs.lead_indices }}
+      lead_count: ${{ steps.matrix.outputs.lead_count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download niche scrapes
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scrape-*
+          merge-multiple: true
+          path: data/scrapes
+
+      - name: Merge, dedupe, and upsert to sheet
+        run: python scripts/merge_scrape_results.py
+        env:
+          MAX_RESULTS: ${{ inputs.max_results }}
+          REQUIRE_LEADS: "true"
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+
+      - name: Prepare deploy matrix
+        id: matrix
+        run: python scripts/write_lead_matrix.py
+
+      - name: Upload leads data
+        uses: actions/upload-artifact@v4
+        with:
+          name: leads-data
+          path: data/leads.json
+          retention-days: 7
+
   scrape:
+    if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'single' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
@@ -94,21 +222,14 @@ jobs:
           CITY_ID: ${{ inputs.city }}
 
       - name: Install Playwright Chromium
-        if: ${{ !inputs.deploy_pending_only }}
         run: python -m playwright install chromium --with-deps
 
-      - name: Export pending leads from sheet
-        if: inputs.deploy_pending_only
-        run: python scripts/export_pending_leads.py
-        env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
-
       - name: Scrape Google Maps
-        if: ${{ !inputs.deploy_pending_only }}
         run: python scrap.py
         env:
           SEARCH_QUERY: ${{ steps.search.outputs.search_query }}
+          NICHE_ID: ${{ inputs.niche }}
+          NICHE_LABEL: ${{ steps.search.outputs.niche_label }}
           MAX_RESULTS: ${{ inputs.max_results }}
           HEADLESS: "true"
           SLOW_MO: "0"
@@ -128,16 +249,59 @@ jobs:
           path: data/leads.json
           retention-days: 7
 
+  export-pending:
+    if: inputs.deploy_pending_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      lead_indices: ${{ steps.matrix.outputs.lead_indices }}
+      lead_count: ${{ steps.matrix.outputs.lead_count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Export pending leads from sheet
+        run: python scripts/export_pending_leads.py
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+
+      - name: Prepare deploy matrix
+        id: matrix
+        run: python scripts/write_lead_matrix.py
+
+      - name: Upload leads data
+        uses: actions/upload-artifact@v4
+        with:
+          name: leads-data
+          path: data/leads.json
+          retention-days: 7
+
   deploy-sites:
-    needs: scrape
-    if: needs.scrape.outputs.lead_count != '0'
+    needs: [merge-scrape, scrape, export-pending]
+    if: |
+      always() &&
+      !cancelled() &&
+      (
+        (needs.merge-scrape.result == 'success' && needs.merge-scrape.outputs.lead_count != '0') ||
+        (needs.scrape.result == 'success' && needs.scrape.outputs.lead_count != '0') ||
+        (needs.export-pending.result == 'success' && needs.export-pending.outputs.lead_count != '0')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 5
       matrix:
-        lead_index: ${{ fromJSON(needs.scrape.outputs.lead_indices) }}
+        lead_index: ${{ fromJSON(needs.merge-scrape.outputs.lead_indices || needs.scrape.outputs.lead_indices || needs.export-pending.outputs.lead_indices) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

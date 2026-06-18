@@ -40,14 +40,15 @@ def main() -> None:
     niche_id = os.environ.get("NICHE_ID", markets["default_niche"])
     city_id = os.environ.get("CITY_ID", markets["default_city"])
 
+    niche = find_niche(markets, niche_id)
     query = build_search_query(niche_id, city_id)
     print(query)
 
-    # GitHub Actions output
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with open(github_output, "a", encoding="utf-8") as handle:
             handle.write(f"search_query={query}\n")
+            handle.write(f"niche_label={niche['label']}\n")
 
 
 if __name__ == "__main__":

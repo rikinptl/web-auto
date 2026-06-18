@@ -27,6 +27,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 from maps_url import resolve_maps_url  # noqa: E402
 from sheets import InventorySkipIndex, load_inventory, upsert_leads  # noqa: E402
+from text_clean import strip_icon_glyphs  # noqa: E402
 
 # ==================== CONFIGURATION ====================
 SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "plumber near Dallas, TX")
@@ -39,6 +40,7 @@ MAX_CHECK_LISTINGS = int(
 )
 HEADLESS = os.environ.get("HEADLESS", "false").lower() in {"1", "true", "yes"}
 SLOW_MO = int(os.environ.get("SLOW_MO", "100"))
+SKIP_SHEET_UPSERT = os.environ.get("SKIP_SHEET_UPSERT", "").lower() in {"1", "true", "yes"}
 NAV_TIMEOUT_MS = int(os.environ.get("NAV_TIMEOUT_MS", "60000"))
 QUICK_CHECK_TIMEOUT_MS = int(os.environ.get("QUICK_CHECK_TIMEOUT_MS", "10000"))
 
@@ -79,7 +81,7 @@ def aria_value(aria: str | None, prefix: str) -> str | None:
     if not aria or prefix not in aria:
         return None
     value = aria.split(prefix, 1)[1].strip()
-    return value or None
+    return strip_icon_glyphs(value)
 
 
 def is_google_url(href: str) -> bool:
@@ -198,7 +200,7 @@ async def extract_text(locator) -> str | None:
     if await locator.count() == 0:
         return None
     text = await locator.text_content()
-    return text.strip() if text else None
+    return strip_icon_glyphs(text.strip() if text else None)
 
 
 async def extract_place_details(page, list_label: str) -> dict:
@@ -255,6 +257,16 @@ async def extract_place_details(page, list_label: str) -> dict:
     }
 
 
+def apply_niche_tag(lead: dict) -> None:
+    """Tag lead with configured niche when scraping in parallel batch mode."""
+    niche_id = os.environ.get("NICHE_ID", "").strip()
+    niche_label = os.environ.get("NICHE_LABEL", "").strip()
+    if niche_label:
+        lead["niche"] = niche_label
+    if niche_id:
+        lead["niche_id"] = niche_id
+
+
 def parse_city_from_address(address: str | None) -> str | None:
     if not address:
         return None
@@ -302,6 +314,7 @@ async def process_batch(
             await wait_for_place_panel(detail_page)
             lead = await extract_place_details(detail_page, list_label)
             lead["google_maps_url"] = resolve_maps_url(lead)
+            apply_niche_tag(lead)
 
             if skip_index and skip_index.has_lead(lead):
                 in_inventory += 1
@@ -427,7 +440,8 @@ async def scrape_google_maps():
 
         root = Path(__file__).resolve().parent
         output_file = root / "no_website_leads.json"
-        leads_file = root / "data" / "leads.json"
+        leads_rel = os.environ.get("LEADS_OUTPUT", "data/leads.json")
+        leads_file = Path(leads_rel) if Path(leads_rel).is_absolute() else root / leads_rel
 
         with output_file.open("w", encoding="utf-8") as f:
             json.dump(leads, f, indent=2, ensure_ascii=False)
@@ -438,15 +452,18 @@ async def scrape_google_maps():
             leads_file.write_text(json.dumps(leads, indent=2, ensure_ascii=False), encoding="utf-8")
             print(f"Wrote {leads_file.relative_to(root)} for site generation", flush=True)
 
-            try:
-                stats = upsert_leads(leads)
-                print(
-                    f"Merged {len(leads)} new lead(s) into Google Sheet "
-                    f"(updated {stats['updated']}, appended {stats['appended']})",
-                    flush=True,
-                )
-            except Exception as exc:
-                print(f"Sheet sync skipped: {exc}", flush=True)
+            if not SKIP_SHEET_UPSERT:
+                try:
+                    stats = upsert_leads(leads)
+                    print(
+                        f"Merged {len(leads)} new lead(s) into Google Sheet "
+                        f"(updated {stats['updated']}, appended {stats['appended']})",
+                        flush=True,
+                    )
+                except Exception as exc:
+                    print(f"Sheet sync skipped: {exc}", flush=True)
+            else:
+                print("SKIP_SHEET_UPSERT set — sheet update deferred to merge step", flush=True)
         elif os.environ.get("REQUIRE_LEADS", "").lower() in {"1", "true", "yes"}:
             raise SystemExit(
                 f"No new no-website leads found after checking {checked} listings "

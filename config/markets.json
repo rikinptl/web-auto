@@ -195,5 +195,5 @@
       "search_term": "Tulsa, OK"
     }
   ],
-  "expansion_notes": "Phase 1: DFW metro. Phase 2: major Texas metros. Phase 3: neighboring states. Run workflow per niche+city combo."
+  "expansion_notes": "Phase 1: DFW metro. Use workflow scrape_mode=all_niches to search every niche in parallel (default cap 50), then deploy."
 }
