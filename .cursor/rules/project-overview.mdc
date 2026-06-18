@@ -1,0 +1,95 @@
+---
+description: Web-auto project architecture, branches, pipeline, and deployments
+alwaysApply: true
+---
+
+# web-auto — project knowledge base
+
+Repo: `rikinptl/web-auto`. Automated B2B pipeline: scrape Google Maps businesses **without websites** → track in Google Sheets → DeepSeek generates copy → Jinja2 renders static site → deploy to GitHub Pages.
+
+## Branches
+
+| Branch | Purpose | Deploy target |
+|--------|---------|---------------|
+| **`main`** | Lead pipeline (scraper, site generator, CI). Source of truth for automation. | **GitHub Pages** (`https://rikinptl.github.io/web-auto/`) via `.github/workflows/deploy.yml` |
+| **`monitor`** | Founder dashboard UI (`monitor/`). Same pipeline code + Next.js monitor app. | **Vercel** — set Root Directory to `monitor`, branch to `monitor` |
+
+Do not mix deploy configs: Pages = `main` + `site/` artifact; Vercel = `monitor` branch + `monitor/` folder.
+
+## `main` — pipeline layout
+
+```
+scrap.py                 # Playwright scraper; writes leads, syncs Sheet
+scripts/
+  resolve_search.py      # niche+city → SEARCH_QUERY (from config/markets.json)
+  sheets.py              # Google Sheets CRUD; HEADERS below
+  generate_site.py       # DeepSeek → site/site-data.json
+  render_site.py         # Jinja2 templates → site/*.html
+  update_sheet.py        # Post-deploy: writes live_url to Sheet
+config/markets.json      # 20 niches × 15 cities (DFW phase 1)
+templates/               # Jinja2 site templates
+site/                    # Generated static output (deployed to Pages)
+data/leads.json          # Scraped leads array (empty in repo; populated by CI)
+.github/workflows/deploy.yml  # workflow_dispatch ONLY (no push trigger)
+```
+
+### Pipeline flow (GitHub Actions)
+
+1. Manual dispatch: pick **niche**, **city**, **max_results**
+2. `scrap.py` — scroll Maps in batches, fast website check, full extract only for no-website leads; stops when `MAX_RESULTS` qualified or `MAX_CHECK_LISTINGS` checked
+3. `replace_inventory()` — **replaces entire Sheet** with scraped leads
+4. `generate_site.py` — DeepSeek for lead index `0` only
+5. Upload `site/` → GitHub Pages
+6. `update_sheet.py` — writes `live_url` for lead 0
+
+### Google Sheet columns
+
+Business Name | Niche | Phone | City | Scraped Status | DeepSeek Copy Status | Live URL | Google Maps URL
+
+### Lead JSON fields
+
+`name`, `niche`, `category`, `phone`, `address`, `city`, `rating`, `reviews`, `website` (always null), `google_maps_url`, `scraped_status`, `copy_status`, `live_url`
+
+Mock data (Joe's Plumbing) is blocked. `data/leads.json` in repo should stay `[]`.
+
+### CI secrets & vars
+
+- Secrets: `DEEPSEEK_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`
+- Vars: `GOOGLE_SHEETS_SPREADSHEET_ID`
+- Scraper env: `REQUIRE_LEADS=true`, `MAX_CHECK_LISTINGS=100`, `HEADLESS=true`
+
+### Scraper notes
+
+- Uses direct `/maps/place/` URLs (not sidebar clicks) — reliable in headless CI
+- Never use `networkidle` on Google Maps
+- Niche+city combos like plumber+Dallas may yield zero no-website leads (most have sites) — pipeline correctly fails with `REQUIRE_LEADS`
+
+## `monitor` — founder dashboard
+
+Next.js 15 app in `monitor/`. Aggregates Sheet + GitHub Actions API into one UI.
+
+```
+monitor/src/
+  app/api/dashboard/   # Aggregated JSON for UI
+  app/api/auth/        # Optional MONITOR_PASSWORD cookie auth
+  components/          # Stats, funnel, leads table, runs, market grid
+  lib/sheets.ts        # Read-only Google Sheets
+  lib/github.ts        # Workflow run history (deploy.yml)
+  lib/dashboard.ts     # Stats + coverage computation
+```
+
+### Vercel env (see `monitor/.env.example`)
+
+`GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_SHEETS_SPREADSHEET_ID`, `GITHUB_TOKEN`, `GITHUB_REPO`, `MONITOR_PASSWORD` (recommended), link URLs optional.
+
+## Local dev
+
+- Python 3.12 + `pip install -r requirements.txt` + Playwright chromium
+- Copy `.env.example` → `.env` with service account path + API keys
+- Monitor: `cd monitor && npm install && npm run dev`
+
+## Costs
+
+- GitHub Actions: free (public repo)
+- DeepSeek: ~$0.01–0.05 per site generated
+- Vercel: free tier for monitor dashboard
