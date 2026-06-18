@@ -9,6 +9,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from sheets import upsert_lead  # noqa: E402
+
 LEADS_FILE = ROOT / "data" / "leads.json"
 OUTPUT_FILE = ROOT / "site" / "site-data.json"
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
@@ -127,6 +131,14 @@ def main() -> None:
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_FILE.write_text(json.dumps(site_data, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Wrote {OUTPUT_FILE}")
+
+    lead["copy_status"] = "Done"
+    try:
+        upsert_lead(lead)
+    except ValueError as exc:
+        print(f"Skipping sheet sync: {exc}")
+    except Exception as exc:
+        print(f"Warning: sheet sync failed: {exc}")
 
 
 if __name__ == "__main__":
