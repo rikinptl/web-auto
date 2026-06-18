@@ -5,13 +5,52 @@ on:
   workflow_dispatch:
     inputs:
       niche:
-        description: Business niche (e.g. plumber, electrician)
+        description: Small business niche to target
+        type: choice
         required: true
         default: plumber
+        options:
+          - plumber
+          - electrician
+          - hvac
+          - carpenter
+          - mechanic
+          - roofer
+          - landscaper
+          - painter
+          - locksmith
+          - house_cleaning
+          - pest_control
+          - garage_door
+          - fence
+          - concrete
+          - handyman
+          - towing
+          - tree_service
+          - appliance_repair
+          - pool_service
+          - pressure_washing
       city:
-        description: City and state (e.g. Austin, TX)
+        description: Target city (DFW first, then expand)
+        type: choice
         required: true
-        default: Austin, TX
+        default: dallas
+        options:
+          - dallas
+          - fort_worth
+          - arlington
+          - plano
+          - frisco
+          - irving
+          - garland
+          - mckinney
+          - denton
+          - richardson
+          - austin
+          - houston
+          - san_antonio
+          - oklahoma_city
+          - tulsa
       max_results:
         description: Max Google Maps listings to process
         required: true
@@ -19,6 +58,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "config/**"
       - "data/**"
       - "scripts/**"
       - "templates/**"
@@ -52,6 +92,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Resolve search query
+        if: github.event_name == 'workflow_dispatch'
+        id: search
+        run: python scripts/resolve_search.py
+        env:
+          NICHE_ID: ${{ inputs.niche }}
+          CITY_ID: ${{ inputs.city }}
+
       - name: Install Playwright Chromium
         if: github.event_name == 'workflow_dispatch'
         run: python -m playwright install chromium --with-deps
@@ -60,7 +108,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: python scrap.py
         env:
-          SEARCH_QUERY: ${{ format('{0} near {1}', inputs.niche, inputs.city) }}
+          SEARCH_QUERY: ${{ steps.search.outputs.search_query }}
           MAX_RESULTS: ${{ inputs.max_results }}
           HEADLESS: "true"
           SLOW_MO: "0"

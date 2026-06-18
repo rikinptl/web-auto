@@ -31,7 +31,7 @@ from maps_url import resolve_maps_url  # noqa: E402
 from sheets import upsert_leads  # noqa: E402
 
 # ==================== CONFIGURATION ====================
-SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "plumber near Austin, TX")
+SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "plumber near Dallas, TX")
 MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "50"))
 HEADLESS = os.environ.get("HEADLESS", "false").lower() in {"1", "true", "yes"}
 SLOW_MO = int(os.environ.get("SLOW_MO", "100"))
