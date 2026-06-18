@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}{{ seo.title }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}{{ seo.description }}{% endblock %}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ base }}assets/css/main.css" />
+</head>
+<body>
+  <div class="scroll-progress" aria-hidden="true"></div>
+
+  <header class="site-header" data-header>
+    <div class="container header-inner">
+      <a class="brand" href="{{ base }}index.html">{{ business.shortName or business.name }}</a>
+      <nav class="nav-desktop" aria-label="Main">
+        <a href="{{ base }}index.html" class="nav-link">Home</a>
+        <a href="{{ base }}services/index.html" class="nav-link">Services</a>
+        <a href="{{ base }}about.html" class="nav-link">About</a>
+        <a href="{{ base }}contact.html" class="nav-link">Contact</a>
+      </nav>
+      <a class="btn btn-primary btn-sm header-cta" href="{{ phone_href }}">{{ business.ctaLabel or 'Call Now' }}</a>
+      <button class="nav-toggle" type="button" aria-label="Open menu" data-nav-toggle>
+        <span></span><span></span>
+      </button>
+    </div>
+    <div class="nav-mobile" data-nav-mobile hidden>
+      <a href="{{ base }}index.html">Home</a>
+      <a href="{{ base }}services/index.html">Services</a>
+      <a href="{{ base }}about.html">About</a>
+      <a href="{{ base }}contact.html">Contact</a>
+      <a class="btn btn-primary" href="{{ phone_href }}">{{ business.ctaLabel or 'Call Now' }}</a>
+    </div>
+  </header>
+
+  <main>{% block content %}{% endblock %}</main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <p class="footer-logo">{{ business.shortName or business.name }}</p>
+        <p class="footer-tagline">{{ business.tagline }}</p>
+      </div>
+      <div>
+        <p class="footer-label">Menu</p>
+        <ul class="footer-links">
+          <li><a href="{{ base }}index.html">Home</a></li>
+          <li><a href="{{ base }}services/index.html">Services</a></li>
+          <li><a href="{{ base }}about.html">About</a></li>
+          <li><a href="{{ base }}contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <p class="footer-label">Contact</p>
+        <a href="{{ phone_href }}">{{ business.phone }}</a>
+        <p>{{ business.address }}</p>
+        <p>{{ business.city }}</p>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <p>© {{ current_year }} {{ business.name }}. All rights reserved.</p>
+      <p>{{ business.niche }} · {{ business.city }}</p>
+    </div>
+  </footer>
+
+  <script src="{{ base }}assets/js/main.js"></script>
+</body>
+</html>

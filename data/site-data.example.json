@@ -1,0 +1,223 @@
+{
+  "business": {
+    "name": "Joe's Plumbing Co.",
+    "shortName": "Joe's Plumbing",
+    "tagline": "Trusted Austin plumbers since 2005",
+    "niche": "Plumber",
+    "phone": "(512) 555-0142",
+    "address": "4821 Shoal Creek Blvd, Austin, TX 78756",
+    "city": "Austin, TX",
+    "hours": "Mon–Sat 7am–7pm · 24/7 emergency line",
+    "ctaLabel": "Call (512) 555-0142 for a Free Estimate"
+  },
+  "seo": {
+    "title": "Joe's Plumbing Co. | Trusted Plumber in Austin, TX",
+    "description": "Licensed Austin plumbers offering emergency repairs, drain cleaning, water heaters, and fixture replacement. 4.8 stars from 47 reviews."
+  },
+  "social_proof": {
+    "rating": 4.8,
+    "reviews": 47
+  },
+  "home": {
+    "hero": {
+      "eyebrow": "Trusted plumber in Austin since 2005",
+      "headline": "Reliable plumbing services in Austin, TX",
+      "subheadline": "4.8 stars from 47 reviews. Fast, friendly, and affordable plumbing repairs and installations — with upfront pricing and same-day availability.",
+      "primaryCta": "Call for a free estimate",
+      "secondaryCta": "Explore our services"
+    },
+    "stats": [
+      { "value": "4.8★", "label": "Average rating" },
+      { "value": "47+", "label": "Verified reviews" },
+      { "value": "24/7", "label": "Emergency response" },
+      { "value": "Same-day", "label": "Scheduling available" }
+    ],
+    "featureSections": [
+      {
+        "eyebrow": "Emergency response",
+        "title": "When a pipe bursts, we move fast",
+        "body": "Our dispatch team routes the nearest licensed technician to your door with the parts and tools to stop damage and restore flow — day or night.",
+        "bullets": [
+          "Live phone answering after hours",
+          "Fully stocked service vans",
+          "Transparent pricing before work begins"
+        ],
+        "cardLabel": "Rapid dispatch",
+        "cardTitle": "Average on-site in under 90 minutes",
+        "cardBody": "Austin homeowners count on us when every minute matters."
+      },
+      {
+        "eyebrow": "Everyday repairs",
+        "title": "From slow drains to water heaters",
+        "body": "Whether it's a dripping faucet or a full system upgrade, we diagnose accurately and fix it right the first time — no upsells, no surprises.",
+        "reverse": true,
+        "cardLabel": "Full-service",
+        "cardTitle": "Repairs, installs, and maintenance",
+        "cardBody": "One trusted team for everything behind your walls."
+      }
+    ],
+    "whyTitle": "The standard we hold ourselves to",
+    "whyChooseUs": [
+      {
+        "title": "Licensed & insured",
+        "description": "Every technician is background-checked, licensed, and covered for your peace of mind."
+      },
+      {
+        "title": "Upfront pricing",
+        "description": "We explain options and costs before any work starts — no hidden fees on the final bill."
+      },
+      {
+        "title": "Respect for your home",
+        "description": "Boot covers, clean work areas, and a walkthrough when the job is done."
+      },
+      {
+        "title": "Locally rooted",
+        "description": "Austin-owned and operated, serving neighborhoods across Travis County for nearly two decades."
+      }
+    ],
+    "testimonials": [
+      {
+        "quote": "They arrived within an hour for a burst pipe and saved our hardwood floors. Professional, calm, and fair on price.",
+        "author": "Sarah M.",
+        "role": "Hyde Park homeowner"
+      },
+      {
+        "quote": "Best drain cleaning we've had in years. Explained everything and didn't push services we didn't need.",
+        "author": "David R.",
+        "role": "North Loop resident"
+      },
+      {
+        "quote": "Installed our tankless water heater perfectly. Clean work and they hauled the old unit away same day.",
+        "author": "Elena V.",
+        "role": "Westlake customer"
+      }
+    ],
+    "cta": {
+      "headline": "Ready for plumbing you can trust?",
+      "subheadline": "Speak with a live dispatcher — estimates are free and scheduling is flexible.",
+      "primaryCta": "Call (512) 555-0142",
+      "secondaryCta": "Send a message"
+    }
+  },
+  "servicesPage": {
+    "intro": "From emergency repairs to planned upgrades, our licensed team handles residential plumbing across Austin with craftsmanship you can see and pricing you can trust."
+  },
+  "services": [
+    {
+      "icon": "01",
+      "title": "Emergency Repairs",
+      "shortDescription": "24/7 emergency plumbing to fix burst pipes, major leaks, and urgent failures.",
+      "longDescription": "When plumbing fails unexpectedly, our emergency team stabilizes the situation, prevents further damage, and restores safe water flow. We arrive prepared with common parts and clear communication from the first call.",
+      "benefits": [
+        "24/7 live dispatch",
+        "Leak isolation and water shutoff",
+        "Burst pipe repair and replacement",
+        "Post-repair safety inspection"
+      ],
+      "process": [
+        { "title": "Call & triage", "description": "We assess urgency and guide you through immediate steps while a technician is dispatched." },
+        { "title": "On-site diagnosis", "description": "A licensed plumber inspects the issue and presents repair options with upfront pricing." },
+        { "title": "Repair & verify", "description": "We complete the fix, test the system, and clean the work area before we leave." }
+      ],
+      "faqs": [
+        { "question": "Do you charge extra for nights and weekends?", "answer": "Emergency rates apply after hours; we always quote before starting work." },
+        { "question": "How fast can you arrive?", "answer": "Most Austin calls are met within 60–90 minutes depending on traffic and demand." }
+      ]
+    },
+    {
+      "icon": "02",
+      "title": "Drain Cleaning",
+      "shortDescription": "Professional clearing for clogged sinks, tubs, and main lines.",
+      "longDescription": "Slow or blocked drains are more than an annoyance — they can signal deeper line issues. We use professional-grade equipment to clear blockages and recommend lasting solutions.",
+      "benefits": [
+        "Kitchen and bathroom drains",
+        "Main line clearing",
+        "Camera inspection available",
+        "Preventative maintenance plans"
+      ],
+      "process": [
+        { "title": "Inspect", "description": "We locate the blockage and check for signs of root intrusion or pipe damage." },
+        { "title": "Clear", "description": "Snaking or hydro-jetting is selected based on the line material and severity." },
+        { "title": "Prevent", "description": "We share maintenance tips and optional follow-up plans to keep lines flowing." }
+      ],
+      "faqs": [
+        { "question": "Are chemical drain cleaners safe?", "answer": "We recommend professional clearing — harsh chemicals can damage older pipes." }
+      ]
+    },
+    {
+      "icon": "03",
+      "title": "Water Heater Installation",
+      "shortDescription": "Tank and tankless water heater installs, repairs, and replacements.",
+      "longDescription": "Whether your unit is failing or you're upgrading for efficiency, we size, install, and code-compliant connect water heaters for reliable hot water year-round.",
+      "benefits": [
+        "Tank and tankless options",
+        "Same-week installation",
+        "Old unit haul-away",
+        "Manufacturer warranty support"
+      ],
+      "process": [
+        { "title": "Assess", "description": "We evaluate capacity needs, venting, and energy goals for your household." },
+        { "title": "Install", "description": "Licensed installation with permit coordination when required." },
+        { "title": "Test", "description": "Full performance check and homeowner walkthrough on operation." }
+      ],
+      "faqs": [
+        { "question": "Tank or tankless?", "answer": "We help you compare upfront cost, efficiency, and household demand." }
+      ]
+    },
+    {
+      "icon": "04",
+      "title": "Fixture Replacement",
+      "shortDescription": "Faucets, toilets, disposals, and valves installed with precision.",
+      "longDescription": "Upgrade worn fixtures with models that match your style and water-efficiency goals. We handle supply lines, seals, and testing for leak-free results.",
+      "benefits": [
+        "Toilet repair and replacement",
+        "Faucet and shower upgrades",
+        "Garbage disposal install",
+        "Shutoff valve replacement"
+      ],
+      "process": [
+        { "title": "Select", "description": "We can supply fixtures or install customer-provided models." },
+        { "title": "Install", "description": "Careful mounting, sealing, and alignment for a finished look." },
+        { "title": "Quality check", "description": "Pressure and leak testing on every connection." }
+      ],
+      "faqs": [
+        { "question": "Can I buy my own fixtures?", "answer": "Yes — we'll verify compatibility before installation day." }
+      ]
+    }
+  ],
+  "about": {
+    "headline": "Austin plumbers who treat your home like our own",
+    "mission": "We believe great plumbing is quiet — pipes that work, bills that make sense, and technicians who show up when they say they will.",
+    "story": [
+      "Joe's Plumbing Co. started in 2005 with one truck and a commitment to honest work in Austin neighborhoods. Nearly two decades later, we've grown into a full-service team — but the principle hasn't changed: do the job right, explain the options, and stand behind every repair.",
+      "Our technicians live here too. That means we understand older Travis County plumbing, hard water wear, and the urgency of Texas summer pipe stress. When you call, you get a local team that takes pride in the details."
+    ],
+    "highlight": {
+      "stat": "19+ years",
+      "label": "Serving Austin homeowners"
+    },
+    "coreValues": [
+      { "title": "Craftsmanship", "description": "We use quality parts and proven methods — not shortcuts that fail six months later." },
+      { "title": "Clarity", "description": "Options, timelines, and pricing are explained in plain language before work begins." },
+      { "title": "Accountability", "description": "If something isn't right, we make it right. Period." }
+    ]
+  },
+  "contact": {
+    "headline": "Let's solve your plumbing issue",
+    "subheadline": "Call now for same-day availability or send a message and we'll get back to you quickly.",
+    "primaryCta": "Call (512) 555-0142",
+    "formCta": "Request a callback",
+    "serviceAreas": [
+      "Austin",
+      "Round Rock",
+      "Cedar Park",
+      "Pflugerville",
+      "Lake Travis",
+      "Westlake Hills"
+    ]
+  },
+  "meta": {
+    "niche": "Plumber",
+    "generated_by": "site-data.example"
+  }
+}

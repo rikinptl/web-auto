@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}{{ service.title }} | {{ business.name }}{% endblock %}
+{% block description %}{{ service.shortDescription }}{% endblock %}
+
+{% block content %}
+<section class="page-hero page-hero-compact">
+  <div class="container reveal">
+    <p class="eyebrow"><a href="{{ base }}services/index.html">Services</a> / {{ service.title }}</p>
+    <h1>{{ service.title }}</h1>
+    <p class="page-lead">{{ service.shortDescription }}</p>
+    <a class="btn btn-primary" href="{{ phone_href }}">Schedule this service</a>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container detail-grid">
+    <div class="detail-main reveal">
+      <h2>Overview</h2>
+      <p class="detail-lead">{{ service.longDescription }}</p>
+
+      <h3>What's included</h3>
+      <ul class="feature-list">
+        {% for benefit in service.benefits %}
+        <li>{{ benefit }}</li>
+        {% endfor %}
+      </ul>
+
+      <h3>How it works</h3>
+      <div class="process-list">
+        {% for step in service.process %}
+        <article class="process-step">
+          <span class="process-num">{{ loop.index }}</span>
+          <div>
+            <h4>{{ step.title }}</h4>
+            <p>{{ step.description }}</p>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+
+    <aside class="detail-sidebar reveal">
+      <div class="sidebar-card">
+        <h3>Request service</h3>
+        <p>Same-day availability across {{ business.city }}.</p>
+        <a class="btn btn-primary btn-block" href="{{ phone_href }}">{{ business.phone }}</a>
+      </div>
+      <div class="sidebar-card">
+        <h3>Service area</h3>
+        <ul class="feature-list compact">
+          {% for area in contact.serviceAreas %}
+          <li>{{ area }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section class="section section-muted">
+  <div class="container">
+    <h2 class="reveal">Common questions</h2>
+    <div class="faq-list">
+      {% for faq in service.faqs %}
+      <details class="faq-item reveal">
+        <summary>{{ faq.question }}</summary>
+        <p>{{ faq.answer }}</p>
+      </details>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

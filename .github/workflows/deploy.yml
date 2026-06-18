@@ -7,7 +7,8 @@ on:
     paths:
       - "data/**"
       - "scripts/**"
-      - "site/**"
+      - "templates/**"
+      - "site/assets/**"
       - ".github/workflows/**"
       - "requirements.txt"
 

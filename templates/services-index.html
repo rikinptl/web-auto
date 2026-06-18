@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Services | {{ business.name }}{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="container reveal">
+    <p class="eyebrow">Our expertise</p>
+    <h1>Professional {{ business.niche|lower }} services in {{ business.city }}</h1>
+    <p class="page-lead">{{ servicesPage.intro }}</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container services-page-grid">
+    {% for service in services %}
+    <a class="service-card service-card-lg reveal" href="{{ base }}services/{{ service.slug }}.html">
+      <span class="service-icon">{{ service.icon or loop.index }}</span>
+      <h2>{{ service.title }}</h2>
+      <p>{{ service.shortDescription }}</p>
+      <ul class="service-points">
+        {% for benefit in service.benefits[:3] %}
+        <li>{{ benefit }}</li>
+        {% endfor %}
+      </ul>
+      <span class="service-link">Explore service →</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="cta-banner">
+  <div class="cta-bg" aria-hidden="true"></div>
+  <div class="container cta-inner reveal">
+    <h2>Not sure which service you need?</h2>
+    <p>Call us and we'll diagnose the issue and recommend the right fix.</p>
+    <a class="btn btn-accent" href="{{ phone_href }}">{{ business.ctaLabel or 'Call Now' }}</a>
+  </div>
+</section>
+{% endblock %}

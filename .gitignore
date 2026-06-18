@@ -1,6 +1,12 @@
 .env
 .venv/
+__pycache__/
+*.pyc
 site/site-data.json
+site/index.html
+site/about.html
+site/contact.html
+site/services/
 no_website_leads.json
 *-service-account*.json
 credentials/

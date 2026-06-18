@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}About | {{ business.name }}{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="container reveal">
+    <p class="eyebrow">Our story</p>
+    <h1>{{ about.headline }}</h1>
+    <p class="page-lead">{{ about.mission }}</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container about-layout reveal">
+    <div class="about-story">
+      {% for paragraph in about.story %}
+      <p>{{ paragraph }}</p>
+      {% endfor %}
+    </div>
+    <div class="about-highlight">
+      <p class="about-stat">{{ about.highlight.stat }}</p>
+      <p class="about-stat-label">{{ about.highlight.label }}</p>
+    </div>
+  </div>
+</section>
+
+<section class="section section-muted">
+  <div class="container">
+    <div class="section-head reveal">
+      <p class="eyebrow">Values</p>
+      <h2>What guides every job we take on</h2>
+    </div>
+    <div class="why-grid">
+      {% for value in about.coreValues %}
+      <article class="why-card reveal">
+        <h3>{{ value.title }}</h3>
+        <p>{{ value.description }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="cta-banner">
+  <div class="cta-bg" aria-hidden="true"></div>
+  <div class="container cta-inner reveal">
+    <h2>Ready to work with a team that shows up?</h2>
+    <p>Licensed, insured, and trusted across {{ business.city }}.</p>
+    <a class="btn btn-accent" href="{{ phone_href }}">{{ business.ctaLabel or 'Call Now' }}</a>
+  </div>
+</section>
+{% endblock %}

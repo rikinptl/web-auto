@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Contact | {{ business.name }}{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="container reveal">
+    <p class="eyebrow">Get in touch</p>
+    <h1>{{ contact.headline }}</h1>
+    <p class="page-lead">{{ contact.subheadline }}</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container contact-grid">
+    <div class="contact-card reveal">
+      <h2>Call or visit</h2>
+      <div class="contact-row">
+        <p class="contact-label">Phone</p>
+        <a href="{{ phone_href }}">{{ business.phone }}</a>
+      </div>
+      <div class="contact-row">
+        <p class="contact-label">Address</p>
+        <p>{{ business.address }}</p>
+        <p>{{ business.city }}</p>
+      </div>
+      <div class="contact-row">
+        <p class="contact-label">Hours</p>
+        <p>{{ business.hours }}</p>
+      </div>
+      <a class="btn btn-primary btn-block" href="{{ phone_href }}">{{ contact.primaryCta or 'Call Now' }}</a>
+    </div>
+
+    <div class="contact-card reveal">
+      <h2>Service areas</h2>
+      <ul class="feature-list">
+        {% for area in contact.serviceAreas %}
+        <li>{{ area }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="contact-card contact-form-card reveal">
+      <h2>Request a callback</h2>
+      <p>Tell us what you need — we'll follow up quickly.</p>
+      <form class="contact-form" onsubmit="return false;">
+        <label>
+          Name
+          <input type="text" placeholder="Your name" />
+        </label>
+        <label>
+          Phone
+          <input type="tel" placeholder="(555) 555-5555" />
+        </label>
+        <label>
+          How can we help?
+          <textarea rows="4" placeholder="Describe the issue or service you need"></textarea>
+        </label>
+        <button class="btn btn-primary btn-block" type="button">{{ contact.formCta or 'Submit request' }}</button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}
