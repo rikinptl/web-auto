@@ -14,6 +14,7 @@ HEADERS = [
     "Scraped Status",
     "DeepSeek Copy Status",
     "Live URL",
+    "Google Maps URL",
 ]
 
 SCOPES = [
@@ -46,10 +47,10 @@ def get_worksheet():
 
 def ensure_headers(worksheet) -> None:
     first_row = worksheet.row_values(1)
-    if first_row != HEADERS:
-        worksheet.clear()
-        worksheet.update(values=[HEADERS], range_name="A1", value_input_option="USER_ENTERED")
-        worksheet.format("A1:G1", {"textFormat": {"bold": True}})
+    if first_row == HEADERS:
+        return
+    worksheet.update(values=[HEADERS], range_name="A1", value_input_option="USER_ENTERED")
+    worksheet.format(f"A1:{chr(64 + len(HEADERS))}1", {"textFormat": {"bold": True}})
 
 
 def lead_to_row(lead: dict) -> list:
@@ -61,6 +62,7 @@ def lead_to_row(lead: dict) -> list:
         lead.get("scraped_status", "Done"),
         lead.get("copy_status", "Pending"),
         lead.get("live_url", ""),
+        lead.get("google_maps_url", ""),
     ]
 
 
@@ -84,7 +86,7 @@ def upsert_lead(lead: dict) -> int:
     if row_index:
         worksheet.update(
             values=[values],
-            range_name=f"A{row_index}:G{row_index}",
+            range_name=f"A{row_index}:H{row_index}",
             value_input_option="USER_ENTERED",
         )
         print(f"Updated sheet row {row_index} for {name}")

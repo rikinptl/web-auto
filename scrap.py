@@ -31,6 +31,18 @@ SLOW_MO = 100                               # Millisecond delay between actions 
 
 # ==================== MAIN SCRAPER ====================
 
+def parse_city_from_address(address: str | None) -> str | None:
+    if not address:
+        return None
+    parts = [part.strip() for part in address.split(",")]
+    if len(parts) >= 3:
+        state = parts[2].split()[0]
+        return f"{parts[1]}, {state}"
+    if len(parts) == 2:
+        return parts[1]
+    return None
+
+
 async def scrape_google_maps():
     """Main entry point: launches browser, performs search, filters no‑website leads."""
     async with async_playwright() as p:
@@ -196,6 +208,8 @@ async def scrape_google_maps():
                 address = await address_elem.text_content() if await address_elem.count() > 0 else None
                 address = address.strip() if address else None
 
+                maps_url = page.url if "google.com/maps" in page.url else None
+
                 # Rating & Reviews
                 rating_elem = page.locator('span[aria-hidden="true"]:has-text("★")')
                 rating = None
@@ -219,12 +233,18 @@ async def scrape_google_maps():
                 # Build lead object
                 lead = {
                     "name": name,
+                    "niche": category,
                     "category": category,
                     "phone": phone,
                     "address": address,
+                    "city": parse_city_from_address(address),
                     "rating": rating,
                     "reviews": reviews,
-                    "website": None  # explicitly null
+                    "website": None,
+                    "google_maps_url": maps_url,
+                    "scraped_status": "Done",
+                    "copy_status": "Pending",
+                    "live_url": "",
                 }
                 leads.append(lead)
                 processed += 1
