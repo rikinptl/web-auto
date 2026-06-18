@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { DashboardData } from "@/lib/types";
+import { LiveSitesModal, liveSiteCount } from "@/components/live-sites-modal";
 import { AiCostPanel } from "@/components/ai-cost-panel";
 import { BreakdownCharts } from "@/components/breakdown-charts";
 import { LeadsTable } from "@/components/leads-table";
@@ -15,6 +16,7 @@ export function DashboardShell() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveSitesOpen, setLiveSitesOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,9 +64,16 @@ export function DashboardShell() {
   if (!data) return null;
 
   const marketsTotal = data.markets.niches.length * data.markets.cities.length;
+  const liveCount = liveSiteCount(data.leads);
 
   return (
     <div className="min-h-screen">
+      <LiveSitesModal
+        leads={data.leads}
+        open={liveSitesOpen}
+        onClose={() => setLiveSitesOpen(false)}
+        orgName={data.links.kemOrg?.split("/").pop() ?? "kem-llc"}
+      />
       <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-ink-950/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-6">
           <div>
@@ -97,16 +106,13 @@ export function DashboardShell() {
                 Run pipeline
               </a>
             )}
-            {data.links.kemOrg && (
-              <a
-                href={data.links.kemOrg}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-ink-200 hover:bg-white/10"
-              >
-                kem-llc sites
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={() => setLiveSitesOpen(true)}
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-ink-200 hover:bg-white/10"
+            >
+              kem-llc sites{liveCount > 0 ? ` (${liveCount})` : ""}
+            </button>
             <button
               onClick={load}
               disabled={loading}
