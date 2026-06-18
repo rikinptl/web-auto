@@ -27,6 +27,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 from maps_url import resolve_maps_url  # noqa: E402
+from sheets import upsert_leads  # noqa: E402
 
 # ==================== CONFIGURATION ====================
 SEARCH_QUERY = "plumber near Austin, TX"   # Change this to your target niche + city
@@ -268,6 +269,17 @@ async def scrape_google_maps():
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(leads, f, indent=2, ensure_ascii=False)
         print(f"\n✅ Done! Found {len(leads)} leads without a website. Saved to {output_file}")
+
+        if leads:
+            try:
+                from dotenv import load_dotenv
+
+                load_dotenv(Path(__file__).resolve().parent / ".env")
+                stats = upsert_leads(leads)
+                total = stats["updated"] + stats["appended"]
+                print(f"Synced {total} lead(s) to Google Sheet in one batch ({stats})")
+            except Exception as exc:
+                print(f"Sheet sync skipped: {exc}")
 
         await browser.close()
 
