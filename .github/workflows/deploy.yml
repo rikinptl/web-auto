@@ -1,8 +1,21 @@
-name: Build and Deploy to GitHub Pages
-run-name: Build and deploy lead site
+name: Lead pipeline
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Scrape + deploy {0} in {1}', inputs.niche, inputs.city) || 'Build and deploy lead site' }}
 
 on:
   workflow_dispatch:
+    inputs:
+      niche:
+        description: Business niche (e.g. plumber, electrician)
+        required: true
+        default: plumber
+      city:
+        description: City and state (e.g. Austin, TX)
+        required: true
+        default: Austin, TX
+      max_results:
+        description: Max Google Maps listings to process
+        required: true
+        default: "5"
   push:
     branches: [main]
     paths:
@@ -10,6 +23,7 @@ on:
       - "scripts/**"
       - "templates/**"
       - "site/assets/**"
+      - "scrap.py"
       - ".github/workflows/**"
       - "requirements.txt"
 
@@ -25,6 +39,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,17 +52,41 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install Playwright Chromium
+        if: github.event_name == 'workflow_dispatch'
+        run: python -m playwright install chromium --with-deps
+
+      - name: Scrape Google Maps
+        if: github.event_name == 'workflow_dispatch'
+        run: python scrap.py
+        env:
+          SEARCH_QUERY: ${{ format('{0} near {1}', inputs.niche, inputs.city) }}
+          MAX_RESULTS: ${{ inputs.max_results }}
+          HEADLESS: "true"
+          SLOW_MO: "0"
+          REQUIRE_LEADS: "true"
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+
       - name: Generate site copy with DeepSeek
         run: python scripts/generate_site.py
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          LEAD_INDEX: "0"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+      - name: Upload leads data
+        uses: actions/upload-artifact@v4
+        with:
+          name: leads-data
+          path: data/leads.json
+          retention-days: 7
 
   deploy:
     needs: build
@@ -62,6 +101,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download leads data
+        uses: actions/download-artifact@v4
+        with:
+          name: leads-data
+          path: data
 
       - name: Setup Python
         uses: actions/setup-python@v5

@@ -17,6 +17,7 @@ Configuration:
 
 import asyncio
 import json
+import os
 import random
 import re
 import sys
@@ -30,10 +31,10 @@ from maps_url import resolve_maps_url  # noqa: E402
 from sheets import upsert_leads  # noqa: E402
 
 # ==================== CONFIGURATION ====================
-SEARCH_QUERY = "plumber near Austin, TX"   # Change this to your target niche + city
-MAX_RESULTS = 50                            # Stop after processing this many listings
-HEADLESS = False                            # Set True to run in background
-SLOW_MO = 100                               # Millisecond delay between actions (human-like)
+SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "plumber near Austin, TX")
+MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "50"))
+HEADLESS = os.environ.get("HEADLESS", "false").lower() in {"1", "true", "yes"}
+SLOW_MO = int(os.environ.get("SLOW_MO", "100"))
 
 # ==================== MAIN SCRAPER ====================
 
@@ -265,21 +266,30 @@ async def scrape_google_maps():
                 continue
 
         # ---------- SAVE RESULTS ----------
-        output_file = "no_website_leads.json"
-        with open(output_file, "w", encoding="utf-8") as f:
+        root = Path(__file__).resolve().parent
+        output_file = root / "no_website_leads.json"
+        leads_file = root / "data" / "leads.json"
+
+        with output_file.open("w", encoding="utf-8") as f:
             json.dump(leads, f, indent=2, ensure_ascii=False)
-        print(f"\n✅ Done! Found {len(leads)} leads without a website. Saved to {output_file}")
+        print(f"\n✅ Done! Found {len(leads)} leads without a website. Saved to {output_file.name}")
 
         if leads:
+            leads_file.parent.mkdir(parents=True, exist_ok=True)
+            leads_file.write_text(json.dumps(leads, indent=2, ensure_ascii=False), encoding="utf-8")
+            print(f"Wrote {leads_file.relative_to(root)} for site generation")
+
             try:
                 from dotenv import load_dotenv
 
-                load_dotenv(Path(__file__).resolve().parent / ".env")
+                load_dotenv(root / ".env")
                 stats = upsert_leads(leads)
                 total = stats["updated"] + stats["appended"]
                 print(f"Synced {total} lead(s) to Google Sheet in one batch ({stats})")
             except Exception as exc:
                 print(f"Sheet sync skipped: {exc}")
+        elif os.environ.get("REQUIRE_LEADS", "").lower() in {"1", "true", "yes"}:
+            raise SystemExit("No no-website leads found — pipeline stopped.")
 
         await browser.close()
 
