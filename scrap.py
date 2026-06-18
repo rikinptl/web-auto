@@ -36,6 +36,9 @@ MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "50"))
 HEADLESS = os.environ.get("HEADLESS", "false").lower() in {"1", "true", "yes"}
 SLOW_MO = int(os.environ.get("SLOW_MO", "100"))
 NAV_TIMEOUT_MS = int(os.environ.get("NAV_TIMEOUT_MS", "60000"))
+MAX_SCROLL_LISTINGS = int(
+    os.environ.get("MAX_SCROLL_LISTINGS", str(max(50, MAX_RESULTS * 10)))
+)
 
 
 async def dismiss_consent(page) -> None:
@@ -256,55 +259,48 @@ async def scrape_google_maps():
         await asyncio.sleep(random.uniform(1.5, 2.5))
 
         # ---------- INFINITE SCROLL ----------
-        # Locate the scrollable container (the feed panel)
-        feed_container = page.locator('div[role="feed"]')
-        # The actual scrollable element is a parent with overflow scroll; find it.
-        scrollable = page.locator(
-            'div.m6QErb.DxyBCb.kA9KIf.dS8AEf, '  # old class pattern
-            'div[role="feed"] >> xpath=ancestor::div[contains(@style, "overflow")]'
-        )
-        # Fallback: locate by checking for scrollHeight
+        scrollable = page.locator('div[role="feed"]')
         if await scrollable.count() == 0:
-            # Try to find any scrollable div inside the feed
+            scrollable = page.locator(
+                'div.m6QErb.DxyBCb.kA9KIf.dS8AEf, '
+                'div[role="feed"] >> xpath=ancestor::div[contains(@style, "overflow")]'
+            )
+        if await scrollable.count() == 0:
             scrollable = page.locator(
                 'div[role="feed"] >> xpath=ancestor::div[@style and contains(@style, "overflow-y")]'
             )
-
-        # If still not found, use the body (less ideal)
         if await scrollable.count() == 0:
-            scrollable = page.locator('body')
+            scrollable = page.locator("body")
 
-        # Scroll until we reach the bottom or MAX_RESULTS
-        processed_count = 0
+        listing_count = 0
         last_height = 0
         no_new_items_attempts = 0
 
-        while processed_count < MAX_RESULTS:
-            # Get current scroll height
-            current_height = await scrollable.evaluate("el => el.scrollHeight")
-            # Scroll to bottom
+        print(f"Scrolling for up to {MAX_SCROLL_LISTINGS} listings...", flush=True)
+        while listing_count < MAX_SCROLL_LISTINGS:
             await scrollable.evaluate("el => el.scrollTo(0, el.scrollHeight)")
-            # Wait for new items to load
-            await asyncio.sleep(random.uniform(2, 4))
-            # Count current visible listings (approximate)
-            listings = page.locator('div[role="article"]')
+            await asyncio.sleep(random.uniform(1.5, 2.5))
+
+            listings = page.locator('div[role="feed"] div[role="article"]')
             count = await listings.count()
-            if count > processed_count:
-                processed_count = count
+            if count > listing_count:
+                listing_count = count
                 no_new_items_attempts = 0
             else:
                 no_new_items_attempts += 1
-                if no_new_items_attempts >= 3:
-                    break  # no more items loading
-            # If scroll height didn't increase, we might be at the end
+                if no_new_items_attempts >= 5:
+                    break
+
             new_height = await scrollable.evaluate("el => el.scrollHeight")
-            if new_height == last_height and no_new_items_attempts > 1:
+            if new_height == last_height and no_new_items_attempts >= 2:
                 break
             last_height = new_height
 
+        print(f"Loaded {listing_count} listings in sidebar.", flush=True)
+
         # ---------- EXTRACT DATA FROM EACH LISTING ----------
         # Visit place URLs directly — clicking cards is unreliable in headless CI.
-        place_urls = await collect_place_urls(page, MAX_RESULTS * 4)
+        place_urls = await collect_place_urls(page, MAX_SCROLL_LISTINGS)
         print(
             f"Found {len(place_urls)} place URLs. Looking for up to {MAX_RESULTS} no-website leads...",
             flush=True,
@@ -369,7 +365,9 @@ async def scrape_google_maps():
             except Exception as exc:
                 print(f"Sheet sync skipped: {exc}")
         elif os.environ.get("REQUIRE_LEADS", "").lower() in {"1", "true", "yes"}:
-            raise SystemExit("No no-website leads found — pipeline stopped.")
+            raise SystemExit(
+                f"No no-website leads found after checking {checked} listings — pipeline stopped."
+            )
 
         await browser.close()
 
