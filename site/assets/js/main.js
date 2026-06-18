@@ -3,6 +3,14 @@ const navToggle = document.querySelector("[data-nav-toggle]");
 const navMobile = document.querySelector("[data-nav-mobile]");
 const progress = document.querySelector(".scroll-progress");
 
+function setNavOpen(isOpen) {
+  document.body.classList.toggle("nav-open", isOpen);
+  if (navToggle) {
+    navToggle.setAttribute("aria-expanded", String(isOpen));
+    navToggle.setAttribute("aria-label", isOpen ? "Close menu" : "Open menu");
+  }
+}
+
 function onScroll() {
   const scrolled = window.scrollY > 24;
   header?.classList.toggle("is-scrolled", scrolled);
@@ -14,8 +22,20 @@ function onScroll() {
 
 navToggle?.addEventListener("click", () => {
   const isHidden = navMobile.hasAttribute("hidden");
-  if (isHidden) navMobile.removeAttribute("hidden");
-  else navMobile.setAttribute("hidden", "");
+  if (isHidden) {
+    navMobile.removeAttribute("hidden");
+    setNavOpen(true);
+  } else {
+    navMobile.setAttribute("hidden", "");
+    setNavOpen(false);
+  }
+});
+
+navMobile?.querySelectorAll("a").forEach((link) => {
+  link.addEventListener("click", () => {
+    navMobile.setAttribute("hidden", "");
+    setNavOpen(false);
+  });
 });
 
 window.addEventListener("scroll", onScroll, { passive: true });
@@ -34,3 +54,10 @@ const observer = new IntersectionObserver(
   { threshold: 0.12, rootMargin: "0px 0px -40px 0px" },
 );
 revealItems.forEach((item) => observer.observe(item));
+
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 768 && navMobile && !navMobile.hasAttribute("hidden")) {
+    navMobile.setAttribute("hidden", "");
+    setNavOpen(false);
+  }
+});
