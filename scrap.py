@@ -65,6 +65,148 @@ async def wait_for_results(page) -> None:
     raise last_error or PlaywrightTimeoutError("Maps results did not load")
 
 
+def maps_url_with_lang(url: str) -> str:
+    if "hl=" in url:
+        return url
+    return f"{url}{'&' if '?' in url else '?'}hl=en"
+
+
+def aria_value(aria: str | None, prefix: str) -> str | None:
+    if not aria or prefix not in aria:
+        return None
+    value = aria.split(prefix, 1)[1].strip()
+    return value or None
+
+
+def is_google_url(href: str) -> bool:
+    return any(
+        token in href
+        for token in ("google.com", "maps.google", "gstatic.com", "googleusercontent")
+    )
+
+
+async def wait_for_place_panel(page) -> None:
+    selectors = [
+        'button[data-item-id="address"]',
+        'button[aria-label^="Address:"]',
+        'div[role="main"] h1',
+        "h1",
+    ]
+    last_error = None
+    for selector in selectors:
+        try:
+            await page.wait_for_selector(selector, timeout=15000)
+            return
+        except PlaywrightTimeoutError as exc:
+            last_error = exc
+    raise last_error or PlaywrightTimeoutError("Place panel did not load")
+
+
+async def collect_place_urls(page, limit: int) -> list[tuple[str, str]]:
+    articles = page.locator('div[role="feed"] div[role="article"]')
+    count = await articles.count()
+    places: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    for i in range(count):
+        if len(places) >= limit:
+            break
+        link = articles.nth(i).locator('a[href*="/maps/place/"]').first
+        if await link.count() == 0:
+            continue
+        href = await link.get_attribute("href")
+        if not href or href in seen:
+            continue
+        seen.add(href)
+        label = (await link.get_attribute("aria-label")) or ""
+        places.append((href, label))
+
+    return places
+
+
+async def extract_website(page) -> str | None:
+    selectors = [
+        'a[data-item-id="authority"]',
+        'a[aria-label^="Website:"]',
+        'button[aria-label^="Website:"]',
+    ]
+    for selector in selectors:
+        loc = page.locator(selector).first
+        if await loc.count() == 0:
+            continue
+        href = await loc.get_attribute("href")
+        if href and not is_google_url(href):
+            return href
+        aria = await loc.get_attribute("aria-label")
+        website = aria_value(aria, "Website:")
+        if website and not website.startswith("http"):
+            website = f"https://{website.lstrip('/')}"
+        if website:
+            return website
+    return None
+
+
+async def extract_text(locator) -> str | None:
+    if await locator.count() == 0:
+        return None
+    text = await locator.text_content()
+    return text.strip() if text else None
+
+
+async def extract_place_details(page, list_label: str) -> dict:
+    name = await extract_text(page.locator('div[role="main"] h1').first)
+    if not name:
+        name = await extract_text(page.locator("h1").first)
+    if not name and list_label:
+        name = list_label.split("·", 1)[0].strip()
+
+    category = await extract_text(
+        page.locator('button[jsaction*="category"], button[aria-label^="Category:"]').first
+    )
+    if not category:
+        category = await extract_text(page.locator("button.DkEaL").first)
+
+    phone_loc = page.locator('button[data-item-id="phone"], button[aria-label^="Phone:"]').first
+    phone = await extract_text(phone_loc)
+    if not phone:
+        phone = aria_value(await phone_loc.get_attribute("aria-label"), "Phone:")
+
+    address_loc = page.locator(
+        'button[data-item-id="address"], button[aria-label^="Address:"]'
+    ).first
+    address = await extract_text(address_loc)
+    if not address:
+        address = aria_value(await address_loc.get_attribute("aria-label"), "Address:")
+
+    rating = None
+    reviews = None
+    stars = page.locator('div[role="main"] span[aria-label*="stars"]').first
+    if await stars.count() > 0:
+        aria = await stars.get_attribute("aria-label") or ""
+        rating_match = re.search(r"([\d.]+)\s*stars?", aria, re.I)
+        if rating_match:
+            rating = float(rating_match.group(1))
+        reviews_match = re.search(r"([\d,]+)\s*reviews?", aria, re.I)
+        if reviews_match:
+            reviews = int(reviews_match.group(1).replace(",", ""))
+
+    return {
+        "name": name,
+        "niche": category,
+        "category": category,
+        "phone": phone,
+        "address": address,
+        "city": parse_city_from_address(address),
+        "rating": rating,
+        "reviews": reviews,
+        "website": None,
+        "google_maps_url": page.url if "google.com/maps" in page.url else "",
+        "scraped_status": "Done",
+        "copy_status": "Pending",
+        "live_url": "",
+    }
+
+
 # ==================== MAIN SCRAPER ====================
 
 def parse_city_from_address(address: str | None) -> str | None:
@@ -97,14 +239,16 @@ async def scrape_google_maps():
         )
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            locale="en-US",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
         )
         page = await context.new_page()
         page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
         page.set_default_timeout(30000)
 
-        search_url = f"https://www.google.com/maps/search/{quote_plus(SEARCH_QUERY)}"
-        print(f"Opening Maps search: {SEARCH_QUERY}")
+        search_url = f"https://www.google.com/maps/search/{quote_plus(SEARCH_QUERY)}?hl=en"
+        print(f"Opening Maps search: {SEARCH_QUERY}", flush=True)
         await page.goto(search_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
 
         await dismiss_consent(page)
@@ -159,130 +303,48 @@ async def scrape_google_maps():
             last_height = new_height
 
         # ---------- EXTRACT DATA FROM EACH LISTING ----------
-        # Get all listing elements (they are 'article' roles inside the feed)
-        listing_elements = await page.locator('div[role="article"]').all()
-        print(f"Found {len(listing_elements)} total listings. Processing up to {MAX_RESULTS}...")
+        # Visit place URLs directly — clicking cards is unreliable in headless CI.
+        place_urls = await collect_place_urls(page, MAX_RESULTS * 4)
+        print(
+            f"Found {len(place_urls)} place URLs. Looking for up to {MAX_RESULTS} no-website leads...",
+            flush=True,
+        )
 
-        leads = []  # Will hold only no‑website businesses
+        leads = []
         processed = 0
+        checked = 0
 
-        for idx, listing in enumerate(listing_elements):
+        for idx, (place_url, list_label) in enumerate(place_urls):
             if processed >= MAX_RESULTS:
                 break
+            checked += 1
             try:
-                # Click the listing to open the details panel on the right
-                await listing.click()
-                await asyncio.sleep(random.uniform(1.0, 2.5))
+                await page.goto(
+                    maps_url_with_lang(place_url),
+                    wait_until="domcontentloaded",
+                    timeout=NAV_TIMEOUT_MS,
+                )
+                await dismiss_consent(page)
+                await wait_for_place_panel(page)
+                await asyncio.sleep(random.uniform(0.8, 1.5))
 
-                try:
-                    await page.wait_for_url(re.compile(r"/maps/place/"), timeout=8000)
-                except PlaywrightTimeoutError:
-                    pass
-
-                # Wait for the details panel to appear
-                panel = page.locator('div[role="main"] div[role="feed"]')  # sometimes the panel is a feed too
-                # Actually the info panel is often a div with class "m6QErb DxyBCb kA9KIf dS8AEf" but we'll use a more robust locator
-                # The detail panel contains the business name at the top
-                # We'll wait for a heading element
-                await page.wait_for_selector('h1.fontHeadlineLarge', timeout=5000)
-
-                # ---------- EXTRACT WEBSITE ----------
-                website = None
-                # Look for a link that looks like a website
-                website_link = page.locator('a[href*="http"]:has-text("Website")')
-                if await website_link.count() > 0:
-                    website = await website_link.get_attribute("href")
-                else:
-                    # Some listings have a globe icon with a link; try alternative selector
-                    website_link = page.locator('a.CsEnBe')  # common class for website link
-                    if await website_link.count() > 0:
-                        website = await website_link.get_attribute("href")
-                    else:
-                        # Sometimes the website is inside a button or plain text; we can search for any anchor with href
-                        anchors = page.locator('a[href^="http"]')
-                        for anchor in await anchors.all():
-                            href = await anchor.get_attribute("href")
-                            if href and "google.com" not in href and "maps.google" not in href:
-                                # likely a real website
-                                website = href
-                                break
-
-                # If website exists, skip this listing
+                website = await extract_website(page)
                 if website:
-                    print(f"Skipping {idx+1}: has website {website}")
+                    print(f"Skipping {idx + 1}: has website {website}", flush=True)
                     continue
 
-                # ---------- EXTRACT OTHER FIELDS (only for no‑website) ----------
-                # Business Name
-                name_elem = page.locator('h1.fontHeadlineLarge')
-                name = await name_elem.text_content() if await name_elem.count() > 0 else None
-                name = name.strip() if name else None
-
-                # Category / Niche
-                category_elem = page.locator('button[aria-label*="Category"]')  # often appears as a button
-                if await category_elem.count() == 0:
-                    category_elem = page.locator('div.fontBodyMedium span:first-child')  # fallback
-                category = await category_elem.text_content() if await category_elem.count() > 0 else None
-                category = category.strip() if category else None
-
-                # Phone
-                phone_elem = page.locator('button[data-item-id="phone"]')
-                if await phone_elem.count() == 0:
-                    phone_elem = page.locator('a[href^="tel:"]')
-                phone = await phone_elem.text_content() if await phone_elem.count() > 0 else None
-                phone = phone.strip() if phone else None
-
-                # Address
-                address_elem = page.locator('button[data-item-id="address"]')
-                if await address_elem.count() == 0:
-                    address_elem = page.locator('div[data-item-id="address"]')
-                address = await address_elem.text_content() if await address_elem.count() > 0 else None
-                address = address.strip() if address else None
-
-                # Rating & Reviews
-                rating_elem = page.locator('span[aria-hidden="true"]:has-text("★")')
-                rating = None
-                reviews = None
-                if await rating_elem.count() > 0:
-                    rating_text = await rating_elem.text_content()
-                    if rating_text:
-                        # e.g., "4.5" or "4.5 ★ (123)"
-                        match = re.search(r'([\d.]+)\s*★', rating_text)
-                        if match:
-                            rating = float(match.group(1))
-                        # Reviews count: often next to stars
-                        reviews_span = page.locator('span[aria-label*="reviews"]')
-                        if await reviews_span.count() > 0:
-                            rev_text = await reviews_span.text_content()
-                            if rev_text:
-                                rev_match = re.search(r'[\d,]+', rev_text)
-                                if rev_match:
-                                    reviews = int(rev_match.group().replace(',', ''))
-
-                # Build lead object
-                lead = {
-                    "name": name,
-                    "niche": category,
-                    "category": category,
-                    "phone": phone,
-                    "address": address,
-                    "city": parse_city_from_address(address),
-                    "rating": rating,
-                    "reviews": reviews,
-                    "website": None,
-                    "google_maps_url": page.url if "google.com/maps" in page.url else "",
-                    "scraped_status": "Done",
-                    "copy_status": "Pending",
-                    "live_url": "",
-                }
+                lead = await extract_place_details(page, list_label)
                 lead["google_maps_url"] = resolve_maps_url(lead)
                 leads.append(lead)
                 processed += 1
-                print(f"✅ Added no‑website lead #{processed}: {name}")
+                print(f"Added no-website lead #{processed}: {lead['name']}", flush=True)
 
             except Exception as e:
-                print(f"⚠️ Error processing listing {idx+1}: {e}")
+                print(f"Error processing listing {idx + 1}: {e}", flush=True)
                 continue
+
+        if checked == 0:
+            print("No place URLs found in search results.", flush=True)
 
         # ---------- SAVE RESULTS ----------
         root = Path(__file__).resolve().parent
