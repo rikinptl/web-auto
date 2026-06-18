@@ -107,13 +107,16 @@ export function LiveSitesModal({
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+                        <span className="hidden text-[10px] font-medium uppercase tracking-wide text-ink-500 sm:inline">
+                          {expanded ? "Hide" : "Details"}
+                        </span>
                         {lead.deployDurationSec != null && (
                           <span className="rounded-md bg-white/5 px-2 py-0.5 font-mono text-[10px] text-ink-400">
                             {formatDuration(lead.deployDurationSec)}
                           </span>
                         )}
                         <span
-                          className={`text-ink-500 transition ${expanded ? "rotate-180" : ""}`}
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/5 text-xs text-ink-400 transition ${expanded ? "rotate-180 bg-signal-blue/15 text-signal-blue" : ""}`}
                           aria-hidden
                         >
                           ▾
