@@ -4,15 +4,15 @@
 
 {% block content %}
 <section class="page-hero">
-  <div class="container reveal">
+  <div class="container reveal" data-reveal="fade">
     <p class="eyebrow">Get in touch</p>
     <h1>{{ contact.headline }}</h1>
     <p class="page-lead">{{ contact.subheadline }}</p>
   </div>
 </section>
 
-<section class="section">
-  <div class="container contact-grid">
+<section class="section" data-scroll-section>
+  <div class="container contact-grid" data-stagger="100">
     <div class="contact-card reveal">
       <h2>Call or visit</h2>
       <div class="contact-row">

@@ -4,34 +4,34 @@
 
 {% block content %}
 <section class="page-hero">
-  <div class="container reveal">
+  <div class="container reveal" data-reveal="fade">
     <p class="eyebrow">Our story</p>
     <h1>{{ about.headline }}</h1>
     <p class="page-lead">{{ about.mission }}</p>
   </div>
 </section>
 
-<section class="section">
-  <div class="container about-layout reveal">
-    <div class="about-story">
+<section class="section" data-scroll-section>
+  <div class="container about-layout">
+    <div class="about-story reveal" data-reveal="left">
       {% for paragraph in about.story %}
       <p>{{ paragraph }}</p>
       {% endfor %}
     </div>
-    <div class="about-highlight">
+    <div class="about-highlight reveal" data-reveal="right" data-reveal-delay="2">
       <p class="about-stat">{{ about.highlight.stat }}</p>
       <p class="about-stat-label">{{ about.highlight.label }}</p>
     </div>
   </div>
 </section>
 
-<section class="section section-muted">
+<section class="section section-muted" data-scroll-section>
   <div class="container">
     <div class="section-head reveal">
       <p class="eyebrow">Values</p>
       <h2>What guides every job we take on</h2>
     </div>
-    <div class="why-grid">
+    <div class="why-grid" data-stagger="90">
       {% for value in about.coreValues %}
       <article class="why-card reveal">
         <h3>{{ value.title }}</h3>
@@ -42,9 +42,9 @@
   </div>
 </section>
 
-<section class="cta-banner">
-  <div class="cta-bg" aria-hidden="true"></div>
-  <div class="container cta-inner reveal">
+<section class="cta-banner" data-scroll-section>
+  <div class="cta-bg parallax" data-parallax="0.05" aria-hidden="true"></div>
+  <div class="container cta-inner reveal" data-reveal="scale">
     <h2>Ready to work with a team that shows up?</h2>
     <p>Licensed, insured, and trusted across {{ business.city }}.</p>
     <a class="btn btn-accent" href="{{ phone_href }}">{{ business.ctaLabel or 'Call Now' }}</a>

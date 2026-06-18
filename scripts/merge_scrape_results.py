@@ -17,6 +17,10 @@ SCRAPE_DIR = ROOT / "data" / "scrapes"
 
 
 def collect_scrape_files() -> list[Path]:
+    pool = ROOT / "data" / "scrape-pool.json"
+    if pool.is_file():
+        return [pool]
+
     patterns = [
         SCRAPE_DIR.glob("scrape-*.json"),
         SCRAPE_DIR.glob("*/scrape-*.json"),
@@ -70,7 +74,7 @@ def main() -> None:
     max_total = int(os.environ.get("MAX_RESULTS", "50"))
     files = collect_scrape_files()
     if not files:
-        raise SystemExit("No scrape-*.json files found to merge")
+        raise SystemExit("No scrape-pool.json or scrape-*.json files found to merge")
 
     raw: list[dict] = []
     for path in files:

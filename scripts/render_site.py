@@ -22,6 +22,12 @@ def prepare_context(data: dict) -> dict:
     context = dict(data)
     context["phone_href"] = f"tel:{phone_digits}" if phone_digits else "#"
     context["current_year"] = __import__("datetime").datetime.now().year
+    business = data.get("business", {})
+    context["header_cta"] = (
+        business.get("headerCta")
+        or business.get("shortCta")
+        or "Call Now"
+    )
 
     services = []
     for service in data.get("services", []):

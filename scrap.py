@@ -27,7 +27,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 from maps_url import resolve_maps_url  # noqa: E402
 from sheets import InventorySkipIndex, load_inventory, upsert_leads  # noqa: E402
-from text_clean import strip_icon_glyphs  # noqa: E402
+from text_clean import clean_phone, strip_icon_glyphs  # noqa: E402
 
 # ==================== CONFIGURATION ====================
 SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "plumber near Dallas, TX")
@@ -43,6 +43,9 @@ SLOW_MO = int(os.environ.get("SLOW_MO", "100"))
 SKIP_SHEET_UPSERT = os.environ.get("SKIP_SHEET_UPSERT", "").lower() in {"1", "true", "yes"}
 NAV_TIMEOUT_MS = int(os.environ.get("NAV_TIMEOUT_MS", "60000"))
 QUICK_CHECK_TIMEOUT_MS = int(os.environ.get("QUICK_CHECK_TIMEOUT_MS", "10000"))
+MAX_REVIEW_SNIPPETS = int(os.environ.get("MAX_REVIEW_SNIPPETS", "8"))
+REVIEW_SCRAPE_TIMEOUT_SEC = float(os.environ.get("REVIEW_SCRAPE_TIMEOUT_SEC", "12"))
+SKIP_REVIEW_SCRAPE = os.environ.get("SKIP_REVIEW_SCRAPE", "").lower() in {"1", "true", "yes"}
 
 
 async def dismiss_consent(page) -> None:
@@ -81,7 +84,8 @@ def aria_value(aria: str | None, prefix: str) -> str | None:
     if not aria or prefix not in aria:
         return None
     value = aria.split(prefix, 1)[1].strip()
-    return strip_icon_glyphs(value)
+    cleaned = strip_icon_glyphs(value)
+    return cleaned or None
 
 
 def is_google_url(href: str) -> bool:
@@ -203,6 +207,94 @@ async def extract_text(locator) -> str | None:
     return strip_icon_glyphs(text.strip() if text else None)
 
 
+def normalize_review_snippet(text: str) -> str:
+    text = strip_icon_glyphs(text or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+async def scrape_review_snippets(page, max_snippets: int = MAX_REVIEW_SNIPPETS) -> list[str]:
+    """Collect recent Google Maps review text for downstream copy personalization."""
+    snippets: list[str] = []
+    seen: set[str] = set()
+
+    tab_selectors = [
+        'button[role="tab"][aria-label*="Reviews"]',
+        'button[aria-label*="reviews"][role="tab"]',
+        'button[jsaction*="review"][aria-label*="review"]',
+    ]
+    for selector in tab_selectors:
+        tab = page.locator(selector).first
+        if await tab.count() == 0:
+            continue
+        try:
+            await tab.click(timeout=4000)
+            await asyncio.sleep(0.6)
+            break
+        except Exception:
+            continue
+
+    review_link = page.locator(
+        'button[jsaction*="review"], button[aria-label*=" reviews"]'
+    ).first
+    if await review_link.count() > 0:
+        try:
+            await review_link.click(timeout=3000)
+            await asyncio.sleep(0.5)
+        except Exception:
+            pass
+
+    scrollable_selectors = [
+        'div[role="main"] div.m6QErb[aria-label*="Reviews"]',
+        'div[role="main"] div.m6QErb.DxyBCb',
+        'div[role="main"] div.m6QErb',
+    ]
+    scrollable = None
+    for selector in scrollable_selectors:
+        loc = page.locator(selector).first
+        if await loc.count() > 0:
+            scrollable = loc
+            break
+
+    text_selectors = [
+        "span.wiI7pd",
+        "div.MyEned span",
+        '[data-review-id] span[lang]',
+    ]
+
+    for _ in range(5):
+        for selector in text_selectors:
+            locs = page.locator(selector)
+            count = await locs.count()
+            for i in range(count):
+                if len(snippets) >= max_snippets:
+                    break
+                raw = await locs.nth(i).text_content()
+                text = normalize_review_snippet(raw or "")
+                if len(text) < 25 or len(text) > 500:
+                    continue
+                if text.lower().startswith("response from the owner"):
+                    continue
+                key = text.lower()[:100]
+                if key in seen:
+                    continue
+                seen.add(key)
+                snippets.append(text)
+            if len(snippets) >= max_snippets:
+                break
+
+        if len(snippets) >= max_snippets or scrollable is None:
+            break
+
+        try:
+            await scrollable.evaluate("el => { el.scrollTop += 500; }")
+            await asyncio.sleep(0.45)
+        except Exception:
+            break
+
+    return snippets[:max_snippets]
+
+
 async def extract_place_details(page, list_label: str) -> dict:
     name = await extract_text(page.locator('div[role="main"] h1').first)
     if not name:
@@ -240,15 +332,26 @@ async def extract_place_details(page, list_label: str) -> dict:
         if reviews_match:
             reviews = int(reviews_match.group(1).replace(",", ""))
 
+    review_snippets: list[str] = []
+    if not SKIP_REVIEW_SCRAPE and (reviews or 0) > 0:
+        try:
+            review_snippets = await asyncio.wait_for(
+                scrape_review_snippets(page),
+                timeout=REVIEW_SCRAPE_TIMEOUT_SEC,
+            )
+        except Exception:
+            review_snippets = []
+
     return {
         "name": name,
         "niche": category,
         "category": category,
-        "phone": phone,
+        "phone": clean_phone(phone),
         "address": address,
         "city": parse_city_from_address(address),
         "rating": rating,
         "reviews": reviews,
+        "review_snippets": review_snippets,
         "website": None,
         "google_maps_url": page.url if "google.com/maps" in page.url else "",
         "scraped_status": "Done",
@@ -286,14 +389,25 @@ async def process_batch(
     skip_index: InventorySkipIndex | None = None,
     niche_id: str = "",
     niche_label: str = "",
+    global_pool=None,
+    max_results: int = 50,
+    max_check_listings: int = 80,
 ) -> int:
     """Check a batch of places. Returns updated checked count."""
+    if global_pool and global_pool.should_stop():
+        return checked
+
     with_website = 0
     in_inventory = 0
     qualified = 0
+    prefix = f"[{niche_id}] " if niche_id else ""
 
     for place_url, list_label in batch:
-        if len(leads) >= MAX_RESULTS or checked >= MAX_CHECK_LISTINGS:
+        if global_pool and global_pool.should_stop():
+            break
+        if not global_pool and len(leads) >= max_results:
+            break
+        if checked >= max_check_listings:
             break
 
         seen.add(place_url)
@@ -301,14 +415,14 @@ async def process_batch(
 
         if skip_index and skip_index.has_maps_url(place_url):
             in_inventory += 1
-            print(f"  skip ({checked}): already in sheet", flush=True)
+            print(f"{prefix}skip ({checked}): already in sheet", flush=True)
             continue
 
         try:
             website = await quick_website_check(detail_page, place_url)
             if website:
                 with_website += 1
-                print(f"  skip ({checked}): has website", flush=True)
+                print(f"{prefix}skip ({checked}): has website", flush=True)
                 continue
 
             await wait_for_place_panel(detail_page)
@@ -318,22 +432,41 @@ async def process_batch(
 
             if skip_index and skip_index.has_lead(lead):
                 in_inventory += 1
-                print(f"  skip ({checked}): already in sheet ({lead['name']})", flush=True)
+                print(f"{prefix}skip ({checked}): already in sheet ({lead['name']})", flush=True)
                 continue
 
+            if global_pool:
+                if not await global_pool.try_add(lead):
+                    if global_pool.should_stop():
+                        break
+                    continue
+            else:
+                if skip_index:
+                    skip_index.register_lead(lead)
+
             leads.append(lead)
-            if skip_index:
-                skip_index.register_lead(lead)
             qualified += 1
-            print(f"  qualified ({checked}): {lead['name']}", flush=True)
+            total = await global_pool.count() if global_pool else len(leads)
+            cap_label = global_pool.cap if global_pool else max_results
+            review_note = ""
+            n_reviews = len(lead.get("review_snippets") or [])
+            if n_reviews:
+                review_note = f", {n_reviews} review snippet(s)"
+            print(
+                f"{prefix}qualified ({checked}): {lead['name']} ({total}/{cap_label}){review_note}",
+                flush=True,
+            )
 
         except Exception as exc:
-            print(f"  error ({checked}): {exc}", flush=True)
+            print(f"{prefix}error ({checked}): {exc}", flush=True)
 
+    total = len(leads)
+    if global_pool:
+        total = len(global_pool.leads)
     print(
-        f"Batch done — checked {len(batch)}, {in_inventory} in sheet, "
+        f"{prefix}Batch done — checked {len(batch)}, {in_inventory} in sheet, "
         f"{with_website} with websites, {qualified} new qualified "
-        f"({len(leads)}/{MAX_RESULTS} total)",
+        f"({total} global total)",
         flush=True,
     )
     return checked
@@ -352,10 +485,16 @@ async def scrape_maps_leads(
     skip_sheet_upsert: bool = False,
     require_leads: bool = False,
     browser=None,
+    global_pool=None,
 ) -> list[dict]:
     """Scrape one Maps search. Optionally reuse an existing browser instance."""
 
     async def run_with_browser(owned_browser) -> list[dict]:
+        prefix = f"[{niche_id}] " if niche_id else ""
+        if global_pool and global_pool.should_stop():
+            print(f"{prefix}Skipping — global cap already reached.", flush=True)
+            return []
+
         context = await owned_browser.new_context(
             viewport={"width": 1920, "height": 1080},
             locale="en-US",
@@ -371,7 +510,6 @@ async def scrape_maps_leads(
             page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
             page.set_default_timeout(30000)
 
-        prefix = f"[{niche_id}] " if niche_id else ""
         search_url = f"https://www.google.com/maps/search/{quote_plus(search_query)}?hl=en"
         print(f"{prefix}Opening Maps search: {search_query}", flush=True)
         await search_page.goto(search_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
@@ -387,15 +525,24 @@ async def scrape_maps_leads(
         batch_num = 0
 
         print(
-            f"{prefix}Target: {max_results} new no-website leads "
+            f"{prefix}Target: "
+            f"{'global cap ' + str(global_pool.cap) if global_pool else str(max_results) + ' leads'} "
             f"({existing_count} already in sheet; will check up to {max_check_listings})",
             flush=True,
         )
 
-        while len(leads) < max_results and checked < max_check_listings:
+        while checked < max_check_listings:
+            if global_pool and global_pool.should_stop():
+                print(f"{prefix}Stopping — global cap reached.", flush=True)
+                break
+            if not global_pool and len(leads) >= max_results:
+                break
+
             remaining = max_check_listings - checked
             batch = await collect_new_place_urls(search_page, seen, remaining, skip_index)
             if not batch:
+                if global_pool and global_pool.should_stop():
+                    break
                 new_count = await scroll_feed(search_page, scrollable)
                 if new_count <= 0:
                     stale_scrolls += 1
@@ -409,11 +556,25 @@ async def scrape_maps_leads(
             batch_num += 1
             print(f"{prefix}Batch {batch_num}: inspecting {len(batch)} new listings...", flush=True)
             checked = await process_batch(
-                detail_page, batch, seen, leads, checked, skip_index, niche_id, niche_label
+                detail_page,
+                batch,
+                seen,
+                leads,
+                checked,
+                skip_index,
+                niche_id,
+                niche_label,
+                global_pool,
+                max_results,
+                max_check_listings,
             )
             stale_scrolls = 0
 
-            if len(leads) >= max_results or checked >= max_check_listings:
+            if global_pool and global_pool.should_stop():
+                break
+            if not global_pool and len(leads) >= max_results:
+                break
+            if checked >= max_check_listings:
                 break
 
             await scroll_feed(search_page, scrollable)

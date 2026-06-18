@@ -1,37 +1,39 @@
 {% extends "base.html" %}
+{% block body_class %}page-home{% endblock %}
 
 {% block content %}
 <section class="hero">
-  <div class="hero-bg" aria-hidden="true">
+  <div class="hero-bg parallax" data-parallax="0.04" aria-hidden="true">
     <div class="hero-shape hero-shape-1"></div>
     <div class="hero-shape hero-shape-2"></div>
     <div class="hero-shape hero-shape-3"></div>
+    <div class="hero-grid" aria-hidden="true"></div>
   </div>
-  <div class="container hero-inner reveal">
-    <div class="hero-badge">
+  <div class="container hero-inner">
+    <div class="hero-badge reveal" data-reveal-delay="0">
       <span class="hero-dot"></span>
       {{ home.hero.eyebrow }}
     </div>
-    <h1 class="hero-title">{{ home.hero.headline }}</h1>
-    <p class="hero-subtitle">{{ home.hero.subheadline }}</p>
-    <div class="hero-actions">
-      <a class="btn btn-primary" href="{{ phone_href }}">{{ home.hero.primaryCta }}</a>
+    <h1 class="hero-title reveal" data-reveal-delay="1">{{ home.hero.headline }}</h1>
+    <p class="hero-subtitle reveal" data-reveal-delay="2">{{ home.hero.subheadline }}</p>
+    <div class="hero-actions reveal" data-reveal-delay="3">
+      <a class="btn btn-primary btn-shine" href="{{ phone_href }}">{{ home.hero.primaryCta }}</a>
       <a class="btn btn-secondary" href="{{ base }}services/index.html">{{ home.hero.secondaryCta }}</a>
     </div>
     {% if social_proof.rating %}
-    <div class="hero-proof">
-      <span class="stars">★★★★★</span>
+    <div class="hero-proof reveal" data-reveal-delay="4">
+      <span class="stars" aria-hidden="true">★★★★★</span>
       <span>{{ social_proof.rating }} stars from {{ social_proof.reviews }} reviews</span>
     </div>
     {% endif %}
   </div>
 </section>
 
-<section class="stats-strip">
+<section class="stats-strip" data-scroll-section>
   <div class="container stats-grid">
     {% for stat in home.stats %}
-    <article class="stat-card reveal">
-      <p class="stat-value">{{ stat.value }}</p>
+    <article class="stat-card reveal" data-reveal-delay="{{ loop.index0 }}">
+      <p class="stat-value" data-count="{{ stat.value }}">{{ stat.value }}</p>
       <p class="stat-label">{{ stat.label }}</p>
     </article>
     {% endfor %}
@@ -39,22 +41,23 @@
 </section>
 
 {% for section in home.featureSections %}
-<section class="feature-split {% if loop.index is odd %}feature-split-alt{% endif %}">
+<section class="feature-split {% if loop.index is odd %}feature-split-alt{% endif %}" data-scroll-section>
   <div class="container feature-grid {% if section.reverse %}feature-reverse{% endif %}">
-    <div class="feature-copy reveal">
+    <div class="feature-copy reveal" data-reveal="{{ 'right' if section.reverse else 'left' }}">
       <p class="eyebrow">{{ section.eyebrow }}</p>
       <h2>{{ section.title }}</h2>
       <p>{{ section.body }}</p>
       {% if section.bullets %}
       <ul class="feature-list">
         {% for bullet in section.bullets %}
-        <li>{{ bullet }}</li>
+        <li class="reveal" data-reveal-delay="{{ loop.index }}">{{ bullet }}</li>
         {% endfor %}
       </ul>
       {% endif %}
     </div>
-    <div class="feature-panel reveal">
-      <div class="feature-card">
+    <div class="feature-panel reveal" data-reveal="{{ 'left' if section.reverse else 'right' }}" data-reveal-delay="2">
+      <div class="feature-card" data-tilt>
+        <div class="feature-card-glow" aria-hidden="true"></div>
         <p class="feature-card-label">{{ section.cardLabel or business.niche }}</p>
         <h3>{{ section.cardTitle or section.title }}</h3>
         <p>{{ section.cardBody or section.body }}</p>
@@ -64,13 +67,13 @@
 </section>
 {% endfor %}
 
-<section class="section">
+<section class="section" data-scroll-section>
   <div class="container">
     <div class="section-head reveal">
       <p class="eyebrow">What we do</p>
       <h2>Services built around your home</h2>
     </div>
-    <div class="services-grid">
+    <div class="services-grid" data-stagger="80">
       {% for service in services[:4] %}
       <a class="service-card reveal" href="{{ base }}services/{{ service.slug }}.html">
         <span class="service-icon">{{ service.icon or loop.index }}</span>
@@ -86,15 +89,16 @@
   </div>
 </section>
 
-<section class="section section-muted">
+<section class="section section-muted" data-scroll-section>
   <div class="container">
     <div class="section-head reveal">
       <p class="eyebrow">Why choose us</p>
       <h2>{{ home.whyTitle or 'The standard we hold ourselves to' }}</h2>
     </div>
-    <div class="why-grid">
+    <div class="why-grid" data-stagger="100">
       {% for item in home.whyChooseUs %}
       <article class="why-card reveal">
+        <span class="why-num">{{ '%02d'|format(loop.index) }}</span>
         <h3>{{ item.title }}</h3>
         <p>{{ item.description }}</p>
       </article>
@@ -103,13 +107,13 @@
   </div>
 </section>
 
-<section class="testimonials section">
+<section class="testimonials section" data-scroll-section>
   <div class="container">
     <div class="section-head reveal">
       <p class="eyebrow">Reviews</p>
       <h2>Neighbors trust {{ business.shortName or business.name }}</h2>
     </div>
-    <div class="testimonial-grid">
+    <div class="testimonial-grid" data-stagger="120">
       {% for item in home.testimonials %}
       <blockquote class="testimonial-card reveal">
         <p>"{{ item.quote }}"</p>
@@ -123,13 +127,13 @@
   </div>
 </section>
 
-<section class="cta-banner">
-  <div class="cta-bg" aria-hidden="true"></div>
-  <div class="container cta-inner reveal">
+<section class="cta-banner" data-scroll-section>
+  <div class="cta-bg parallax" data-parallax="0.06" aria-hidden="true"></div>
+  <div class="container cta-inner reveal" data-reveal="scale">
     <h2>{{ home.cta.headline }}</h2>
     <p>{{ home.cta.subheadline }}</p>
     <div class="hero-actions">
-      <a class="btn btn-accent" href="{{ phone_href }}">{{ home.cta.primaryCta }}</a>
+      <a class="btn btn-accent btn-shine" href="{{ phone_href }}">{{ home.cta.primaryCta }}</a>
       <a class="btn btn-ghost" href="{{ base }}contact.html">{{ home.cta.secondaryCta }}</a>
     </div>
   </div>

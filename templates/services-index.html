@@ -4,15 +4,15 @@
 
 {% block content %}
 <section class="page-hero">
-  <div class="container reveal">
+  <div class="container reveal" data-reveal="fade">
     <p class="eyebrow">Our expertise</p>
     <h1>Professional {{ business.niche|lower }} services in {{ business.city }}</h1>
     <p class="page-lead">{{ servicesPage.intro }}</p>
   </div>
 </section>
 
-<section class="section">
-  <div class="container services-page-grid">
+<section class="section" data-scroll-section>
+  <div class="container services-page-grid" data-stagger="90">
     {% for service in services %}
     <a class="service-card service-card-lg reveal" href="{{ base }}services/{{ service.slug }}.html">
       <span class="service-icon">{{ service.icon or loop.index }}</span>
@@ -29,9 +29,9 @@
   </div>
 </section>
 
-<section class="cta-banner">
-  <div class="cta-bg" aria-hidden="true"></div>
-  <div class="container cta-inner reveal">
+<section class="cta-banner" data-scroll-section>
+  <div class="cta-bg parallax" data-parallax="0.05" aria-hidden="true"></div>
+  <div class="container cta-inner reveal" data-reveal="scale">
     <h2>Not sure which service you need?</h2>
     <p>Call us and we'll diagnose the issue and recommend the right fix.</p>
     <a class="btn btn-accent" href="{{ phone_href }}">{{ business.ctaLabel or 'Call Now' }}</a>

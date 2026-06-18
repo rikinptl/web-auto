@@ -8,7 +8,8 @@
     "address": "4821 Shoal Creek Blvd, Austin, TX 78756",
     "city": "Austin, TX",
     "hours": "Mon–Sat 7am–7pm · 24/7 emergency line",
-    "ctaLabel": "Call (512) 555-0142 for a Free Estimate"
+    "ctaLabel": "Call for a Free Estimate",
+    "headerCta": "Call Now"
   },
   "seo": {
     "title": "Joe's Plumbing Co. | Trusted Plumber in Austin, TX",

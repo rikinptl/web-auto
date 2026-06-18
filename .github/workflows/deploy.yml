@@ -1,8 +1,11 @@
 name: Lead pipeline
 run-name: >-
-  ${{ inputs.deploy_pending_only && 'Deploy pending leads' || (inputs.scrape_mode == 'all_niches' && format('Parallel scrape ({0} max) in {1}', inputs.max_results, inputs.city) || format('Scrape + deploy {0} in {1}', inputs.niche, inputs.city)) }}
+  ${{ github.event_name == 'schedule' && format('Daily scrape (10 max) in {0}', vars.DAILY_CITY || 'dallas') || (inputs.deploy_pending_only && 'Deploy pending leads' || (inputs.scrape_mode == 'all_niches' && format('Parallel scrape ({0} max) in {1}', inputs.max_results, inputs.city) || format('Scrape + deploy {0} in {1}', inputs.niche, inputs.city))) }}
 
 on:
+  schedule:
+    # Daily batch — 10 sites (9:00 AM US Central ≈ 14:00 UTC)
+    - cron: "0 14 * * *"
   workflow_dispatch:
     inputs:
       scrape_mode:
@@ -78,7 +81,7 @@ concurrency:
 
 jobs:
   scrape-all:
-    if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches' }}
+    if: ${{ github.event_name == 'schedule' || (!inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches') }}
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright/python:v1.49.1-jammy
@@ -93,26 +96,28 @@ jobs:
       - name: Scrape all niches (one browser, parallel contexts)
         run: python scripts/scrape_all_niches.py
         env:
-          CITY_ID: ${{ inputs.city }}
-          MAX_RESULTS: ${{ inputs.max_results }}
+          CITY_ID: ${{ github.event_name == 'schedule' && (vars.DAILY_CITY || 'dallas') || inputs.city }}
+          MAX_RESULTS: ${{ github.event_name == 'schedule' && '10' || inputs.max_results }}
           NICHE_CONCURRENCY: "5"
           HEADLESS: "true"
           SLOW_MO: "0"
           MAX_CHECK_LISTINGS: "60"
+          MAX_REVIEW_SNIPPETS: "8"
+          REVIEW_SCRAPE_TIMEOUT_SEC: "12"
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
 
-      - name: Upload niche scrapes
+      - name: Upload scrape pool
         uses: actions/upload-artifact@v4
         with:
           name: niche-scrapes
-          path: data/scrape-*.json
+          path: data/scrape-pool.json
           if-no-files-found: error
           retention-days: 3
 
   merge-scrape:
     needs: scrape-all
-    if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches' }}
+    if: ${{ github.event_name == 'schedule' || (!inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -139,7 +144,7 @@ jobs:
       - name: Merge, dedupe, and upsert to sheet
         run: python scripts/merge_scrape_results.py
         env:
-          MAX_RESULTS: ${{ inputs.max_results }}
+          MAX_RESULTS: ${{ github.event_name == 'schedule' && '10' || inputs.max_results }}
           REQUIRE_LEADS: "true"
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
@@ -156,7 +161,7 @@ jobs:
           retention-days: 7
 
   scrape:
-    if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'single' }}
+    if: ${{ github.event_name != 'schedule' && !inputs.deploy_pending_only && inputs.scrape_mode == 'single' }}
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright/python:v1.49.1-jammy
@@ -189,6 +194,8 @@ jobs:
           SLOW_MO: "0"
           REQUIRE_LEADS: "true"
           MAX_CHECK_LISTINGS: "100"
+          MAX_REVIEW_SNIPPETS: "8"
+          REVIEW_SCRAPE_TIMEOUT_SEC: "12"
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
 
@@ -204,7 +211,7 @@ jobs:
           retention-days: 7
 
   export-pending:
-    if: inputs.deploy_pending_only
+    if: ${{ github.event_name != 'schedule' && inputs.deploy_pending_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:

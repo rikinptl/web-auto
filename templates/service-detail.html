@@ -5,7 +5,7 @@
 
 {% block content %}
 <section class="page-hero page-hero-compact">
-  <div class="container reveal">
+  <div class="container reveal" data-reveal="fade">
     <p class="eyebrow"><a href="{{ base }}services/index.html">Services</a> / {{ service.title }}</p>
     <h1>{{ service.title }}</h1>
     <p class="page-lead">{{ service.shortDescription }}</p>
@@ -13,23 +13,23 @@
   </div>
 </section>
 
-<section class="section">
+<section class="section" data-scroll-section>
   <div class="container detail-grid">
-    <div class="detail-main reveal">
+    <div class="detail-main reveal" data-reveal="left">
       <h2>Overview</h2>
       <p class="detail-lead">{{ service.longDescription }}</p>
 
       <h3>What's included</h3>
       <ul class="feature-list">
         {% for benefit in service.benefits %}
-        <li>{{ benefit }}</li>
+        <li class="reveal" data-reveal-delay="{{ loop.index }}">{{ benefit }}</li>
         {% endfor %}
       </ul>
 
       <h3>How it works</h3>
-      <div class="process-list">
+      <div class="process-list" data-stagger="100">
         {% for step in service.process %}
-        <article class="process-step">
+        <article class="process-step reveal">
           <span class="process-num">{{ loop.index }}</span>
           <div>
             <h4>{{ step.title }}</h4>
@@ -40,7 +40,7 @@
       </div>
     </div>
 
-    <aside class="detail-sidebar reveal">
+    <aside class="detail-sidebar reveal" data-reveal="right" data-reveal-delay="2">
       <div class="sidebar-card">
         <h3>Request service</h3>
         <p>Same-day availability across {{ business.city }}.</p>
@@ -58,10 +58,10 @@
   </div>
 </section>
 
-<section class="section section-muted">
+<section class="section section-muted" data-scroll-section>
   <div class="container">
     <h2 class="reveal">Common questions</h2>
-    <div class="faq-list">
+    <div class="faq-list" data-stagger="80">
       {% for faq in service.faqs %}
       <details class="faq-item reveal">
         <summary>{{ faq.question }}</summary>

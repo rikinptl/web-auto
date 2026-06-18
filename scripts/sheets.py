@@ -15,6 +15,8 @@ from gspread.exceptions import APIError
 
 from maps_url import place_key, resolve_maps_url
 
+from text_clean import clean_phone, strip_icon_glyphs
+
 def normalize_phone(phone: str) -> str:
     return re.sub(r"\D", "", phone or "")
 
@@ -25,10 +27,10 @@ def normalize_name(name: str) -> str:
 
 def record_to_lead(row: dict) -> dict:
     return {
-        "name": row.get("Business Name", ""),
+        "name": strip_icon_glyphs(row.get("Business Name", "")),
         "niche": row.get("Niche", ""),
         "category": row.get("Niche", ""),
-        "phone": row.get("Phone", ""),
+        "phone": clean_phone(row.get("Phone", "")),
         "city": row.get("City", ""),
         "scraped_status": row.get("Scraped Status", ""),
         "copy_status": row.get("DeepSeek Copy Status", ""),
@@ -185,9 +187,9 @@ def is_mock_lead(lead: dict) -> bool:
 
 def lead_to_row(lead: dict) -> list:
     return [
-        lead.get("name", ""),
+        strip_icon_glyphs(lead.get("name", "")),
         lead.get("niche") or lead.get("category", ""),
-        lead.get("phone", ""),
+        clean_phone(lead.get("phone", "")),
         lead.get("city", ""),
         lead.get("scraped_status", "Done"),
         lead.get("copy_status", "Pending"),
@@ -200,7 +202,10 @@ def _load_row_index(worksheet) -> dict[tuple[str, str], int]:
     records = _with_retry(worksheet.get_all_records, "get_all_records")
     index: dict[tuple[str, str], int] = {}
     for row_number, row in enumerate(records, start=2):
-        key = (row.get("Business Name", ""), row.get("Phone", ""))
+        key = (
+            strip_icon_glyphs(row.get("Business Name", "")),
+            clean_phone(row.get("Phone", "")),
+        )
         index[key] = row_number
     return index
 
@@ -220,7 +225,9 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
     for lead in leads:
         if is_mock_lead(lead):
             raise ValueError(f"Refusing mock lead data: {lead.get('name')}")
-        key = (lead.get("name", ""), lead.get("phone", ""))
+        phone = clean_phone(lead.get("phone", ""))
+        lead = {**lead, "phone": phone, "name": strip_icon_glyphs(lead.get("name", ""))}
+        key = (lead.get("name", ""), phone)
         values = lead_to_row(lead)
         existing_row = row_index.get(key)
         if existing_row:

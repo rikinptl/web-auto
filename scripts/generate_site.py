@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from render_site import render_site  # noqa: E402
 from sheets import is_mock_lead  # noqa: E402
-from text_clean import strip_icon_glyphs  # noqa: E402
+from text_clean import clean_phone, strip_icon_glyphs  # noqa: E402
 
 LEADS_FILE = ROOT / "data" / "leads.json"
 EXAMPLE_DATA = ROOT / "data" / "site-data.example.json"
@@ -33,7 +33,8 @@ Return ONLY valid JSON matching this schema (fill every field richly):
     "address": "string",
     "city": "string",
     "hours": "string",
-    "ctaLabel": "string"
+    "ctaLabel": "string",
+    "headerCta": "string (short — 2-4 words for nav button, e.g. Call Now)"
   },
   "seo": { "title": "string", "description": "string" },
   "home": {
@@ -97,7 +98,23 @@ Rules:
 - Each service needs 3-4 benefits, 3 process steps, 2 faqs.
 - about.story must be 2 paragraphs.
 - Write premium, trustworthy copy — not generic filler.
-- Use the lead's real phone, address, city, rating, and reviews where relevant."""
+- Use the lead's real phone, address, city, rating, and review count where relevant.
+
+When customer_review_snippets are provided:
+- Read them for recurring themes (speed, price fairness, professionalism, quality, communication).
+- Let themes shape hero subheadline, whyChooseUs, featureSections, and service emphasis.
+- Write testimonials as ORIGINAL paraphrased voice — never copy or closely quote Google reviews.
+- Use first name + last initial and a neighborhood/role for testimonial authors (e.g. "Sarah M., Hyde Park homeowner").
+- Do NOT repeat negative complaints in marketing copy; use them only to avoid unsupported claims
+  (e.g. never say "cheapest" if reviews mention high prices).
+- If snippets are sparse or absent, fall back to strong niche + city copy without inventing specific praise."""
+
+REVIEW_PROMPT_RULES = """
+Review personalization (when customer_review_snippets present):
+- Extract themes only — do not paste review text on the site.
+- Testimonials must sound real but be newly written paraphrases, not quotations from Google.
+- Weight services and bullets toward what customers actually mention.
+- Ignore one-off negative rants; never highlight weaknesses."""
 
 
 def load_lead() -> dict:
@@ -115,25 +132,48 @@ def load_lead() -> dict:
     return lead
 
 
+def build_user_prompt(lead: dict) -> str:
+    snippets = lead.get("review_snippets") or []
+    if not isinstance(snippets, list):
+        snippets = []
+
+    payload: dict = {
+        "business_name": lead["name"],
+        "niche": lead.get("niche") or lead.get("category", ""),
+        "city": lead.get("city", ""),
+        "phone": lead.get("phone", ""),
+        "address": lead.get("address", ""),
+        "rating": lead.get("rating"),
+        "review_count": lead.get("reviews"),
+    }
+
+    if snippets:
+        payload["customer_review_snippets"] = snippets[:10]
+        payload["copy_instructions"] = (
+            "Use review themes to personalize copy. Paraphrase only — never quote reviews verbatim. "
+            "Skip unsupported superlatives if reviews contradict them."
+        )
+    else:
+        payload["copy_instructions"] = (
+            "No review text available — write strong niche-specific copy without inventing "
+            "specific customer praise."
+        )
+
+    return json.dumps(payload, indent=2)
+
+
 def call_deepseek(lead: dict, api_key: str) -> dict:
-    user_prompt = json.dumps(
-        {
-            "business_name": lead["name"],
-            "niche": lead.get("niche") or lead.get("category", ""),
-            "city": lead.get("city", ""),
-            "phone": lead.get("phone", ""),
-            "address": lead.get("address", ""),
-            "rating": lead.get("rating"),
-            "reviews": lead.get("reviews"),
-        },
-        indent=2,
-    )
+    user_prompt = build_user_prompt(lead)
+    snippets = lead.get("review_snippets") or []
+    system = SYSTEM_PROMPT
+    if snippets:
+        system = SYSTEM_PROMPT + REVIEW_PROMPT_RULES
 
     payload = {
         "model": "deepseek-chat",
         "response_format": {"type": "json_object"},
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.7,
@@ -163,7 +203,7 @@ def call_deepseek(lead: dict, api_key: str) -> dict:
 def merge_lead_facts(lead: dict, copy: dict) -> dict:
     business = copy.setdefault("business", {})
     business.setdefault("name", lead["name"])
-    business["phone"] = strip_icon_glyphs(lead.get("phone", business.get("phone", "")))
+    business["phone"] = clean_phone(lead.get("phone", business.get("phone", "")))
     business["address"] = strip_icon_glyphs(lead.get("address", business.get("address", "")))
     business["city"] = lead.get("city", business.get("city", ""))
     business["niche"] = lead.get("niche") or lead.get("category", business.get("niche", ""))
@@ -175,6 +215,7 @@ def merge_lead_facts(lead: dict, copy: dict) -> dict:
     copy["meta"] = {
         "niche": business.get("niche", ""),
         "generated_by": "deepseek",
+        "review_snippets_used": len(lead.get("review_snippets") or []),
     }
     return copy
 
@@ -189,7 +230,12 @@ def main() -> None:
 
     use_example = os.environ.get("USE_EXAMPLE_DATA", "").lower() in {"1", "true", "yes"}
     lead = load_lead()
+    snippet_count = len(lead.get("review_snippets") or [])
     print(f"Generating site for: {lead['name']}")
+    if snippet_count:
+        print(f"Personalizing from {snippet_count} scraped review snippet(s)")
+    else:
+        print("No review snippets — using niche/city copy only")
 
     if use_example:
         site_data = json.loads(EXAMPLE_DATA.read_text(encoding="utf-8"))
