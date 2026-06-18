@@ -77,80 +77,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare-niches:
+  scrape-all:
     if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches' }}
     runs-on: ubuntu-latest
-    outputs:
-      niche_ids: ${{ steps.matrix.outputs.niche_ids }}
-      per_niche_max: ${{ steps.matrix.outputs.per_niche_max }}
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.49.1-jammy
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build niche matrix
-        id: matrix
-        run: python scripts/write_niche_matrix.py
+      - name: Install Python dependencies
+        run: pip install gspread google-auth python-dotenv jinja2 'playwright==1.49.1'
+
+      - name: Scrape all niches (one browser, parallel contexts)
+        run: python scripts/scrape_all_niches.py
         env:
-          MAX_RESULTS: ${{ inputs.max_results }}
-
-  scrape-niche:
-    needs: prepare-niches
-    if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      max-parallel: 10
-      matrix:
-        niche_id: ${{ fromJSON(needs.prepare-niches.outputs.niche_ids) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Resolve search query
-        id: search
-        run: python scripts/resolve_search.py
-        env:
-          NICHE_ID: ${{ matrix.niche_id }}
           CITY_ID: ${{ inputs.city }}
-
-      - name: Install Playwright Chromium
-        run: python -m playwright install chromium --with-deps
-
-      - name: Scrape Google Maps
-        run: python scrap.py
-        env:
-          SEARCH_QUERY: ${{ steps.search.outputs.search_query }}
-          NICHE_ID: ${{ matrix.niche_id }}
-          NICHE_LABEL: ${{ steps.search.outputs.niche_label }}
-          MAX_RESULTS: ${{ needs.prepare-niches.outputs.per_niche_max }}
-          LEADS_OUTPUT: data/scrape-${{ matrix.niche_id }}.json
-          SKIP_SHEET_UPSERT: "true"
-          REQUIRE_LEADS: "false"
+          MAX_RESULTS: ${{ inputs.max_results }}
+          NICHE_CONCURRENCY: "5"
           HEADLESS: "true"
           SLOW_MO: "0"
           MAX_CHECK_LISTINGS: "60"
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
 
-      - name: Upload niche scrape
+      - name: Upload niche scrapes
         uses: actions/upload-artifact@v4
         with:
-          name: scrape-${{ matrix.niche_id }}
-          path: data/scrape-${{ matrix.niche_id }}.json
-          if-no-files-found: warn
+          name: niche-scrapes
+          path: data/scrape-*.json
+          if-no-files-found: error
           retention-days: 3
 
   merge-scrape:
-    needs: scrape-niche
+    needs: scrape-all
     if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -172,9 +133,8 @@ jobs:
       - name: Download niche scrapes
         uses: actions/download-artifact@v4
         with:
-          pattern: scrape-*
-          merge-multiple: true
-          path: data/scrapes
+          name: niche-scrapes
+          path: data
 
       - name: Merge, dedupe, and upsert to sheet
         run: python scripts/merge_scrape_results.py
@@ -198,6 +158,8 @@ jobs:
   scrape:
     if: ${{ !inputs.deploy_pending_only && inputs.scrape_mode == 'single' }}
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.49.1-jammy
     timeout-minutes: 45
     outputs:
       lead_indices: ${{ steps.matrix.outputs.lead_indices }}
@@ -206,13 +168,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install Python dependencies
+        run: pip install gspread google-auth python-dotenv jinja2 'playwright==1.49.1'
 
       - name: Resolve search query
         id: search
@@ -220,9 +177,6 @@ jobs:
         env:
           NICHE_ID: ${{ inputs.niche }}
           CITY_ID: ${{ inputs.city }}
-
-      - name: Install Playwright Chromium
-        run: python -m playwright install chromium --with-deps
 
       - name: Scrape Google Maps
         run: python scrap.py

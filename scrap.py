@@ -257,10 +257,8 @@ async def extract_place_details(page, list_label: str) -> dict:
     }
 
 
-def apply_niche_tag(lead: dict) -> None:
+def apply_niche_tag(lead: dict, niche_id: str = "", niche_label: str = "") -> None:
     """Tag lead with configured niche when scraping in parallel batch mode."""
-    niche_id = os.environ.get("NICHE_ID", "").strip()
-    niche_label = os.environ.get("NICHE_LABEL", "").strip()
     if niche_label:
         lead["niche"] = niche_label
     if niche_id:
@@ -286,6 +284,8 @@ async def process_batch(
     leads: list[dict],
     checked: int,
     skip_index: InventorySkipIndex | None = None,
+    niche_id: str = "",
+    niche_label: str = "",
 ) -> int:
     """Check a batch of places. Returns updated checked count."""
     with_website = 0
@@ -314,7 +314,7 @@ async def process_batch(
             await wait_for_place_panel(detail_page)
             lead = await extract_place_details(detail_page, list_label)
             lead["google_maps_url"] = resolve_maps_url(lead)
-            apply_niche_tag(lead)
+            apply_niche_tag(lead, niche_id, niche_label)
 
             if skip_index and skip_index.has_lead(lead):
                 in_inventory += 1
@@ -339,6 +339,154 @@ async def process_batch(
     return checked
 
 
+async def scrape_maps_leads(
+    *,
+    search_query: str,
+    max_results: int,
+    max_check_listings: int,
+    leads_output: Path,
+    skip_index: InventorySkipIndex | None = None,
+    existing_count: int = 0,
+    niche_id: str = "",
+    niche_label: str = "",
+    skip_sheet_upsert: bool = False,
+    require_leads: bool = False,
+    browser=None,
+) -> list[dict]:
+    """Scrape one Maps search. Optionally reuse an existing browser instance."""
+
+    async def run_with_browser(owned_browser) -> list[dict]:
+        context = await owned_browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+        )
+        search_page = await context.new_page()
+        detail_page = await context.new_page()
+        for page in (search_page, detail_page):
+            page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
+            page.set_default_timeout(30000)
+
+        prefix = f"[{niche_id}] " if niche_id else ""
+        search_url = f"https://www.google.com/maps/search/{quote_plus(search_query)}?hl=en"
+        print(f"{prefix}Opening Maps search: {search_query}", flush=True)
+        await search_page.goto(search_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        await dismiss_consent(search_page)
+        await wait_for_results(search_page)
+        await asyncio.sleep(random.uniform(1.0, 2.0))
+
+        scrollable = await get_scrollable(search_page)
+        seen: set[str] = set()
+        leads: list[dict] = []
+        checked = 0
+        stale_scrolls = 0
+        batch_num = 0
+
+        print(
+            f"{prefix}Target: {max_results} new no-website leads "
+            f"({existing_count} already in sheet; will check up to {max_check_listings})",
+            flush=True,
+        )
+
+        while len(leads) < max_results and checked < max_check_listings:
+            remaining = max_check_listings - checked
+            batch = await collect_new_place_urls(search_page, seen, remaining, skip_index)
+            if not batch:
+                new_count = await scroll_feed(search_page, scrollable)
+                if new_count <= 0:
+                    stale_scrolls += 1
+                    if stale_scrolls >= 5:
+                        print(f"{prefix}No more listings to load.", flush=True)
+                        break
+                else:
+                    stale_scrolls = 0
+                continue
+
+            batch_num += 1
+            print(f"{prefix}Batch {batch_num}: inspecting {len(batch)} new listings...", flush=True)
+            checked = await process_batch(
+                detail_page, batch, seen, leads, checked, skip_index, niche_id, niche_label
+            )
+            stale_scrolls = 0
+
+            if len(leads) >= max_results or checked >= max_check_listings:
+                break
+
+            await scroll_feed(search_page, scrollable)
+
+        print(
+            f"{prefix}Finished — {len(leads)} new qualified lead(s) after checking {checked} listings.",
+            flush=True,
+        )
+
+        await context.close()
+        return leads
+
+    if browser is not None:
+        return await run_with_browser(browser)
+
+    async with async_playwright() as p:
+        owned = await p.chromium.launch(
+            headless=HEADLESS,
+            slow_mo=SLOW_MO,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-gpu",
+                "--window-size=1920,1080",
+            ],
+        )
+        try:
+            return await run_with_browser(owned)
+        finally:
+            await owned.close()
+
+
+def persist_leads(
+    leads: list[dict],
+    leads_output: Path,
+    *,
+    skip_sheet_upsert: bool,
+    require_leads: bool,
+    checked_hint: str = "",
+    existing_count: int = 0,
+) -> None:
+    root = Path(__file__).resolve().parent
+    output_file = root / "no_website_leads.json"
+
+    with output_file.open("w", encoding="utf-8") as f:
+        json.dump(leads, f, indent=2, ensure_ascii=False)
+
+    if leads:
+        leads_output.parent.mkdir(parents=True, exist_ok=True)
+        leads_output.write_text(json.dumps(leads, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"Wrote {leads_output.relative_to(root)}", flush=True)
+
+        if not skip_sheet_upsert:
+            try:
+                stats = upsert_leads(leads)
+                print(
+                    f"Merged {len(leads)} new lead(s) into Google Sheet "
+                    f"(updated {stats['updated']}, appended {stats['appended']})",
+                    flush=True,
+                )
+            except Exception as exc:
+                print(f"Sheet sync skipped: {exc}", flush=True)
+        else:
+            print("SKIP_SHEET_UPSERT set — sheet update deferred to merge step", flush=True)
+    elif require_leads:
+        raise SystemExit(
+            f"No new no-website leads found {checked_hint}"
+            f"({existing_count} already in sheet) — pipeline stopped."
+        )
+
+
 async def scrape_google_maps():
     skip_index: InventorySkipIndex | None = None
     existing_count = 0
@@ -357,120 +505,28 @@ async def scrape_google_maps():
     except Exception as exc:
         print(f"Sheet inventory not loaded (will scrape without skip list): {exc}", flush=True)
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=HEADLESS,
-            slow_mo=SLOW_MO,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-gpu",
-                "--window-size=1920,1080",
-            ],
-        )
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US",
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            ),
-            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-        )
-        search_page = await context.new_page()
-        detail_page = await context.new_page()
-        for page in (search_page, detail_page):
-            page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
-            page.set_default_timeout(30000)
+    leads_rel = os.environ.get("LEADS_OUTPUT", "data/leads.json")
+    leads_file = Path(leads_rel) if Path(leads_rel).is_absolute() else Path(__file__).resolve().parent / leads_rel
 
-        search_url = f"https://www.google.com/maps/search/{quote_plus(SEARCH_QUERY)}?hl=en"
-        print(f"Opening Maps search: {SEARCH_QUERY}", flush=True)
-        await search_page.goto(search_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
-        await dismiss_consent(search_page)
-        await wait_for_results(search_page)
-        await asyncio.sleep(random.uniform(1.0, 2.0))
-
-        scrollable = await get_scrollable(search_page)
-        seen: set[str] = set()
-        leads: list[dict] = []
-        checked = 0
-        stale_scrolls = 0
-        batch_num = 0
-
-        print(
-            f"Target: {MAX_RESULTS} new no-website leads "
-            f"({existing_count} already in sheet; will check up to {MAX_CHECK_LISTINGS})",
-            flush=True,
-        )
-
-        while len(leads) < MAX_RESULTS and checked < MAX_CHECK_LISTINGS:
-            remaining = MAX_CHECK_LISTINGS - checked
-            batch = await collect_new_place_urls(
-                search_page, seen, remaining, skip_index
-            )
-            if not batch:
-                new_count = await scroll_feed(search_page, scrollable)
-                if new_count <= 0:
-                    stale_scrolls += 1
-                    if stale_scrolls >= 5:
-                        print("No more listings to load.", flush=True)
-                        break
-                else:
-                    stale_scrolls = 0
-                continue
-
-            batch_num += 1
-            print(f"Batch {batch_num}: inspecting {len(batch)} new listings...", flush=True)
-            checked = await process_batch(
-                detail_page, batch, seen, leads, checked, skip_index
-            )
-            stale_scrolls = 0
-
-            if len(leads) >= MAX_RESULTS or checked >= MAX_CHECK_LISTINGS:
-                break
-
-            await scroll_feed(search_page, scrollable)
-
-        print(
-            f"Finished — {len(leads)} new qualified lead(s) after checking {checked} listings.",
-            flush=True,
-        )
-
-        root = Path(__file__).resolve().parent
-        output_file = root / "no_website_leads.json"
-        leads_rel = os.environ.get("LEADS_OUTPUT", "data/leads.json")
-        leads_file = Path(leads_rel) if Path(leads_rel).is_absolute() else root / leads_rel
-
-        with output_file.open("w", encoding="utf-8") as f:
-            json.dump(leads, f, indent=2, ensure_ascii=False)
-        print(f"Saved {len(leads)} leads to {output_file.name}", flush=True)
-
-        if leads:
-            leads_file.parent.mkdir(parents=True, exist_ok=True)
-            leads_file.write_text(json.dumps(leads, indent=2, ensure_ascii=False), encoding="utf-8")
-            print(f"Wrote {leads_file.relative_to(root)} for site generation", flush=True)
-
-            if not SKIP_SHEET_UPSERT:
-                try:
-                    stats = upsert_leads(leads)
-                    print(
-                        f"Merged {len(leads)} new lead(s) into Google Sheet "
-                        f"(updated {stats['updated']}, appended {stats['appended']})",
-                        flush=True,
-                    )
-                except Exception as exc:
-                    print(f"Sheet sync skipped: {exc}", flush=True)
-            else:
-                print("SKIP_SHEET_UPSERT set — sheet update deferred to merge step", flush=True)
-        elif os.environ.get("REQUIRE_LEADS", "").lower() in {"1", "true", "yes"}:
-            raise SystemExit(
-                f"No new no-website leads found after checking {checked} listings "
-                f"({existing_count} already in sheet) — pipeline stopped."
-            )
-
-        await browser.close()
+    leads = await scrape_maps_leads(
+        search_query=SEARCH_QUERY,
+        max_results=MAX_RESULTS,
+        max_check_listings=MAX_CHECK_LISTINGS,
+        leads_output=leads_file,
+        skip_index=skip_index,
+        existing_count=existing_count,
+        niche_id=os.environ.get("NICHE_ID", ""),
+        niche_label=os.environ.get("NICHE_LABEL", ""),
+        skip_sheet_upsert=SKIP_SHEET_UPSERT,
+        require_leads=os.environ.get("REQUIRE_LEADS", "").lower() in {"1", "true", "yes"},
+    )
+    persist_leads(
+        leads,
+        leads_file,
+        skip_sheet_upsert=SKIP_SHEET_UPSERT,
+        require_leads=os.environ.get("REQUIRE_LEADS", "").lower() in {"1", "true", "yes"},
+        existing_count=existing_count,
+    )
 
 
 if __name__ == "__main__":
