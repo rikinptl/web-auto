@@ -1,0 +1,13 @@
+---
+description: Git commit message standards — no Cursor co-author trailers
+alwaysApply: true
+---
+
+# Git commit messages
+
+When creating git commits in this project:
+
+- **Never** add `Co-authored-by: Cursor <cursoragent@cursor.com>` or any Cursor co-author trailer.
+- **Never** add `Co-authored-by:` lines for the AI agent or Cursor.
+- Write commit messages as the developer only — short subject, optional body, no agent attribution footers.
+- If a tool or template suggests adding a Co-authored-by line, omit it.
