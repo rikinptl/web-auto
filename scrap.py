@@ -21,8 +21,8 @@ import os
 import random
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -35,6 +35,35 @@ SEARCH_QUERY = os.environ.get("SEARCH_QUERY", "plumber near Dallas, TX")
 MAX_RESULTS = int(os.environ.get("MAX_RESULTS", "50"))
 HEADLESS = os.environ.get("HEADLESS", "false").lower() in {"1", "true", "yes"}
 SLOW_MO = int(os.environ.get("SLOW_MO", "100"))
+NAV_TIMEOUT_MS = int(os.environ.get("NAV_TIMEOUT_MS", "60000"))
+
+
+async def dismiss_consent(page) -> None:
+    for label in ("Accept all", "Reject all", "I agree"):
+        try:
+            await page.get_by_role("button", name=label).click(timeout=3000)
+            await asyncio.sleep(0.5)
+            return
+        except PlaywrightTimeoutError:
+            continue
+
+
+async def wait_for_results(page) -> None:
+    """Wait for Maps results without networkidle (Maps never goes idle in CI)."""
+    selectors = [
+        'div[role="feed"] div[role="article"]',
+        'div[role="feed"]',
+        'div[role="article"]',
+    ]
+    last_error = None
+    for selector in selectors:
+        try:
+            await page.wait_for_selector(selector, timeout=NAV_TIMEOUT_MS)
+            return
+        except PlaywrightTimeoutError as exc:
+            last_error = exc
+    raise last_error or PlaywrightTimeoutError("Maps results did not load")
+
 
 # ==================== MAIN SCRAPER ====================
 
@@ -71,26 +100,16 @@ async def scrape_google_maps():
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
+        page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
+        page.set_default_timeout(30000)
 
-        # Navigate to Google Maps
-        await page.goto("https://www.google.com/maps")
-        await page.wait_for_load_state("networkidle")
+        search_url = f"https://www.google.com/maps/search/{quote_plus(SEARCH_QUERY)}"
+        print(f"Opening Maps search: {SEARCH_QUERY}")
+        await page.goto(search_url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
 
-        # Accept cookies if the popup appears (common)
-        try:
-            await page.click('button:has-text("Accept all")', timeout=5000)
-        except:
-            pass
-
-        # Perform search
-        search_box = await page.locator('input#searchboxinput')
-        await search_box.fill(SEARCH_QUERY)
-        await page.keyboard.press("Enter")
-        await page.wait_for_load_state("networkidle")
-
-        # Wait for the results sidebar to appear
-        await page.wait_for_selector('div[role="feed"]', timeout=15000)
-        await asyncio.sleep(random.uniform(1, 2))
+        await dismiss_consent(page)
+        await wait_for_results(page)
+        await asyncio.sleep(random.uniform(1.5, 2.5))
 
         # ---------- INFINITE SCROLL ----------
         # Locate the scrollable container (the feed panel)
@@ -283,7 +302,7 @@ async def scrape_google_maps():
                 from dotenv import load_dotenv
 
                 load_dotenv(root / ".env")
-                stats = replace_inventory(leads)
+                replace_inventory(leads)
                 print("Synced scraped leads to Google Sheet (full inventory replace)")
             except Exception as exc:
                 print(f"Sheet sync skipped: {exc}")
