@@ -58,11 +58,9 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: lead-pipeline
   cancel-in-progress: false
 
 jobs:
@@ -82,7 +80,6 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Resolve search query
-        if: github.event_name == 'workflow_dispatch'
         id: search
         run: python scripts/resolve_search.py
         env:
@@ -90,11 +87,9 @@ jobs:
           CITY_ID: ${{ inputs.city }}
 
       - name: Install Playwright Chromium
-        if: github.event_name == 'workflow_dispatch'
         run: python -m playwright install chromium --with-deps
 
       - name: Scrape Google Maps
-        if: github.event_name == 'workflow_dispatch'
         run: python scrap.py
         env:
           SEARCH_QUERY: ${{ steps.search.outputs.search_query }}
@@ -107,7 +102,6 @@ jobs:
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
 
       - name: Generate site copy with DeepSeek
-        if: github.event_name == 'workflow_dispatch'
         run: python scripts/generate_site.py
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -115,52 +109,18 @@ jobs:
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
           LEAD_INDEX: "0"
 
-      - name: Upload Pages artifact
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - name: Upload leads data
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: leads-data
-          path: data/leads.json
-          retention-days: 7
-
-  deploy:
-    needs: build
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download leads data
-        uses: actions/download-artifact@v4
-        with:
-          name: leads-data
-          path: data
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Deploy site to kem-llc org repo
+        id: org_deploy
+        run: python scripts/deploy_org_site.py
+        env:
+          DEPLOY_ORG: ${{ vars.DEPLOY_ORG }}
+          ORG_DEPLOY_TOKEN: ${{ secrets.ORG_DEPLOY_TOKEN }}
+          LEAD_INDEX: "0"
 
       - name: Update Google Sheet with live URL
         run: python scripts/update_sheet.py
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
-          LIVE_URL: ${{ steps.deployment.outputs.page_url }}
+          LIVE_URL: ${{ steps.org_deploy.outputs.live_url }}
+          COPY_STATUS: Done

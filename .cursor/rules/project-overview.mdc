@@ -11,7 +11,7 @@ Repo: `rikinptl/web-auto`. Automated B2B pipeline: scrape Google Maps businesses
 
 | Branch | Purpose | Deploy target |
 |--------|---------|---------------|
-| **`main`** | Lead pipeline (scraper, site generator, CI). Source of truth for automation. | **GitHub Pages** (`https://rikinptl.github.io/web-auto/`) via `.github/workflows/deploy.yml` |
+| **`main`** | Lead pipeline (scraper, site generator, CI). Source of truth for automation. | **kem-llc org repos** — one public repo per lead via `scripts/deploy_org_site.py` → `https://kem-llc.github.io/{slug}/` |
 | **`monitor`** | Founder dashboard UI (`monitor/`). Same pipeline code + Next.js monitor app. | **Vercel** — set Root Directory to `monitor`, branch to `monitor` |
 
 Do not mix deploy configs: Pages = `main` + `site/` artifact; Vercel = `monitor` branch + `monitor/` folder.
@@ -25,7 +25,8 @@ scripts/
   sheets.py              # Google Sheets CRUD; HEADERS below
   generate_site.py       # DeepSeek → site/site-data.json
   render_site.py         # Jinja2 templates → site/*.html
-  update_sheet.py        # Post-deploy: writes live_url to Sheet
+  deploy_org_site.py   # Create kem-llc/{slug} repo, push site/, enable Pages
+  setup_kem_llc.py     # Verify org + set ORG_DEPLOY_TOKEN / DEPLOY_ORG on repo
 config/markets.json      # 20 niches × 15 cities (DFW phase 1)
 templates/               # Jinja2 site templates
 site/                    # Generated static output (deployed to Pages)
@@ -38,9 +39,9 @@ data/leads.json          # Scraped leads array (empty in repo; populated by CI)
 1. Manual dispatch: pick **niche**, **city**, **max_results**
 2. `scrap.py` — scroll Maps in batches, fast website check, full extract only for no-website leads; stops when `MAX_RESULTS` qualified or `MAX_CHECK_LISTINGS` checked
 3. `replace_inventory()` — **replaces entire Sheet** with scraped leads
-4. `generate_site.py` — DeepSeek for lead index `0` only
-5. Upload `site/` → GitHub Pages
-6. `update_sheet.py` — writes `live_url` for lead 0
+4. `generate_site.py` — DeepSeek copy for lead index `0`
+5. `deploy_org_site.py` — creates/updates `kem-llc/{business-slug}` repo, enables Pages
+6. `update_sheet.py` — writes per-lead `live_url` (e.g. `https://kem-llc.github.io/true-line-plumbing-dallas-8339/`)
 
 ### Google Sheet columns
 
@@ -54,8 +55,8 @@ Mock data (Joe's Plumbing) is blocked. `data/leads.json` in repo should stay `[]
 
 ### CI secrets & vars
 
-- Secrets: `DEEPSEEK_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`
-- Vars: `GOOGLE_SHEETS_SPREADSHEET_ID`
+- Secrets: `DEEPSEEK_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `ORG_DEPLOY_TOKEN` (PAT with kem-llc repo create)
+- Vars: `GOOGLE_SHEETS_SPREADSHEET_ID`, `DEPLOY_ORG` (`kem-llc`)
 - Scraper env: `REQUIRE_LEADS=true`, `MAX_CHECK_LISTINGS=100`, `HEADLESS=true`
 
 ### Scraper notes
