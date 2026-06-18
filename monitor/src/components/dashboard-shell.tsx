@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DashboardData } from "@/lib/types";
-import { LiveSitesModal, liveSiteCount } from "@/components/live-sites-modal";
+import { liveSiteCount, LiveSitesPanel } from "@/components/live-sites-panel";
 import { AiDashboard } from "@/components/ai-dashboard";
 import { DashboardTabs, type DashboardTab } from "@/components/dashboard-tabs";
 import { BreakdownCharts } from "@/components/breakdown-charts";
@@ -11,14 +11,13 @@ import { MarketCoverageGrid } from "@/components/market-coverage";
 import { PipelineFunnel } from "@/components/pipeline-funnel";
 import { RunsTable } from "@/components/runs-table";
 import { StatsGrid } from "@/components/stats-grid";
-import { ExternalLink, formatRelative } from "@/components/ui";
+import { ExternalLink, formatRelative, Panel } from "@/components/ui";
 
 export function DashboardShell() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [liveSitesOpen, setLiveSitesOpen] = useState(false);
-  const [tab, setTab] = useState<DashboardTab>("pipeline");
+  const [tab, setTab] = useState<DashboardTab>("overview");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,6 +39,27 @@ export function DashboardShell() {
     const id = setInterval(load, 60_000);
     return () => clearInterval(id);
   }, [load]);
+
+  const orgName = data?.links.kemOrg?.split("/").pop() ?? "kem-llc";
+  const liveCount = data ? liveSiteCount(data.leads) : 0;
+  const marketsTotal = data
+    ? data.markets.niches.length * data.markets.cities.length
+    : 0;
+
+  const tabs = useMemo(
+    () =>
+      data
+        ? [
+            { id: "overview" as const, label: "Overview" },
+            { id: "leads" as const, label: "Leads", badge: data.stats.total },
+            { id: "sites" as const, label: "Live sites", badge: liveCount },
+            { id: "runs" as const, label: "Runs", badge: data.runs.length },
+            { id: "markets" as const, label: "Markets", badge: marketsTotal },
+            { id: "ai" as const, label: "AI & budget" },
+          ]
+        : [],
+    [data, liveCount, marketsTotal]
+  );
 
   if (loading && !data) {
     return (
@@ -65,19 +85,8 @@ export function DashboardShell() {
 
   if (!data) return null;
 
-  const marketsTotal = data.markets.niches.length * data.markets.cities.length;
-  const liveCount = liveSiteCount(data.leads);
-
   return (
     <div className="min-h-screen">
-      <LiveSitesModal
-        leads={data.leads}
-        open={liveSitesOpen}
-        onClose={() => setLiveSitesOpen(false)}
-        orgName={data.links.kemOrg?.split("/").pop() ?? "kem-llc"}
-        costPerSiteUsd={data.aiCost.costPerSiteUsd}
-        tokensPerSite={data.aiCost.tokensPerSite}
-      />
       <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-ink-950/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-6">
           <div>
@@ -86,7 +95,8 @@ export function DashboardShell() {
             </p>
             <h1 className="text-xl font-semibold text-ink-100">Pipeline command center</h1>
             <p className="text-xs text-ink-500">
-              Parallel niche scrape → merge → kem-llc deploy · updated {formatRelative(data.fetchedAt)}
+              Updated {formatRelative(data.fetchedAt)} · {liveCount} live · {data.stats.total}{" "}
+              leads
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -112,7 +122,7 @@ export function DashboardShell() {
             )}
             <button
               type="button"
-              onClick={() => setLiveSitesOpen(true)}
+              onClick={() => setTab("sites")}
               className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-ink-200 hover:bg-white/10"
             >
               kem-llc sites{liveCount > 0 ? ` (${liveCount})` : ""}
@@ -127,13 +137,13 @@ export function DashboardShell() {
           </div>
         </div>
         <div className="mx-auto max-w-[1400px] border-t border-white/[0.04] px-4 py-3 md:px-6">
-          <DashboardTabs active={tab} onChange={setTab} />
+          <DashboardTabs active={tab} onChange={setTab} tabs={tabs} />
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-6 md:px-6 md:py-8">
+      <main className="mx-auto max-w-[1400px] px-4 py-6 md:px-6 md:py-8">
         {data.errors.length > 0 && (
-          <div className="rounded-xl border border-signal-amber/30 bg-signal-amber/10 px-4 py-3 text-sm text-signal-amber">
+          <div className="mb-6 rounded-xl border border-signal-amber/30 bg-signal-amber/10 px-4 py-3 text-sm text-signal-amber">
             <p className="font-medium">Partial data — some sources failed:</p>
             <ul className="mt-1 list-inside list-disc text-signal-amber/90">
               {data.errors.map((err) => (
@@ -143,14 +153,13 @@ export function DashboardShell() {
           </div>
         )}
 
-        <StatsGrid
-          stats={data.stats}
-          runSummary={data.runSummary}
-          marketsTotal={marketsTotal}
-        />
-
-        {tab === "pipeline" ? (
-          <>
+        {tab === "overview" && (
+          <div className="space-y-6">
+            <StatsGrid
+              stats={data.stats}
+              runSummary={data.runSummary}
+              marketsTotal={marketsTotal}
+            />
             <div className="grid gap-4 xl:grid-cols-3">
               <div className="xl:col-span-1">
                 <PipelineFunnel stats={data.stats} />
@@ -159,16 +168,29 @@ export function DashboardShell() {
                 <BreakdownCharts byNiche={data.byNiche} byCity={data.byCity} />
               </div>
             </div>
-
-            <RunsTable runs={data.runs} />
-            <LeadsTable leads={data.leads} />
-            <MarketCoverageGrid coverage={data.coverage} />
-          </>
-        ) : (
-          <AiDashboard aiCost={data.aiCost} stats={data.stats} />
+          </div>
         )}
 
-        <footer className="border-t border-white/[0.06] pt-6 text-center text-xs text-ink-600">
+        {tab === "leads" && <LeadsTable leads={data.leads} />}
+
+        {tab === "sites" && (
+          <Panel title={`${orgName} live sites`} subtitle="Per-business links, timing, and cost">
+            <LiveSitesPanel
+              leads={data.leads}
+              orgName={orgName}
+              costPerSiteUsd={data.aiCost.costPerSiteUsd}
+              tokensPerSite={data.aiCost.tokensPerSite}
+            />
+          </Panel>
+        )}
+
+        {tab === "runs" && <RunsTable runs={data.runs} />}
+
+        {tab === "markets" && <MarketCoverageGrid coverage={data.coverage} />}
+
+        {tab === "ai" && <AiDashboard aiCost={data.aiCost} stats={data.stats} />}
+
+        <footer className="mt-8 border-t border-white/[0.06] pt-6 text-center text-xs text-ink-600">
           Deploy branch: <span className="font-mono text-ink-400">monitor</span>
           {data.links.repo && (
             <>
