@@ -649,22 +649,30 @@ def persist_leads(
 
 
 async def scrape_google_maps():
-    skip_index: InventorySkipIndex | None = None
-    existing_count = 0
     try:
         from dotenv import load_dotenv
 
         load_dotenv(Path(__file__).resolve().parent / ".env")
-        existing = load_inventory()
-        existing_count = len(existing)
-        if existing:
-            skip_index = InventorySkipIndex(existing)
-            print(
-                f"Loaded {existing_count} lead(s) from Google Sheet — will skip already scraped.",
-                flush=True,
-            )
-    except Exception as exc:
-        print(f"Sheet inventory not loaded (will scrape without skip list): {exc}", flush=True)
+    except ImportError:
+        pass
+
+    skip_index: InventorySkipIndex | None = None
+    existing_count = 0
+    skip_inventory = os.environ.get("SKIP_INVENTORY", "").lower() in {"1", "true", "yes"}
+    if skip_inventory:
+        print("SKIP_INVENTORY set — scraping without sheet dedupe (demo mode)", flush=True)
+    else:
+        try:
+            existing = load_inventory()
+            existing_count = len(existing)
+            if existing:
+                skip_index = InventorySkipIndex(existing)
+                print(
+                    f"Loaded {existing_count} lead(s) from Google Sheet — will skip already scraped.",
+                    flush=True,
+                )
+        except Exception as exc:
+            print(f"Sheet inventory not loaded (will scrape without skip list): {exc}", flush=True)
 
     leads_rel = os.environ.get("LEADS_OUTPUT", "data/leads.json")
     leads_file = Path(leads_rel) if Path(leads_rel).is_absolute() else Path(__file__).resolve().parent / leads_rel

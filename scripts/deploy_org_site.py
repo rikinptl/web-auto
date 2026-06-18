@@ -215,7 +215,7 @@ def main() -> None:
         raise SystemExit("ORG_DEPLOY_TOKEN (or GH_TOKEN) is not set")
 
     lead = load_lead()
-    repo_slug = repo_slug_for_lead(lead)
+    repo_slug = os.environ.get("DEPLOY_REPO") or repo_slug_for_lead(lead)
     print(f"Deploying {lead['name']} → {org}/{repo_slug}")
 
     ensure_org_exists(org, token)

@@ -1,0 +1,151 @@
+name: Demo — one business → live site
+
+run-name: >-
+  Demo ${{ inputs.niche }} in ${{ inputs.city }} → live site
+
+on:
+  workflow_dispatch:
+    inputs:
+      niche:
+        description: Business type to search on Google Maps
+        type: choice
+        required: true
+        default: plumber
+        options:
+          - plumber
+          - electrician
+          - hvac
+          - carpenter
+          - mechanic
+          - roofer
+          - landscaper
+          - painter
+          - locksmith
+          - house_cleaning
+          - pest_control
+          - garage_door
+          - fence
+          - concrete
+          - handyman
+          - towing
+          - tree_service
+          - appliance_repair
+          - pool_service
+          - pressure_washing
+      city:
+        description: Target city
+        type: choice
+        required: true
+        default: dallas
+        options:
+          - dallas
+          - fort_worth
+          - arlington
+          - plano
+          - frisco
+          - irving
+          - garland
+          - mckinney
+          - denton
+          - richardson
+          - austin
+          - houston
+          - san_antonio
+          - oklahoma_city
+          - tulsa
+      scrape_reviews:
+        description: Scrape Google review snippets for personalized copy (slower)
+        type: boolean
+        default: false
+      update_sheet:
+        description: Also add this lead to the Google Sheet
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-pipeline
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.49.1-jammy
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt 'playwright==1.49.1'
+
+      - name: Resolve search query
+        id: search
+        run: python scripts/resolve_search.py
+        env:
+          NICHE_ID: ${{ inputs.niche }}
+          CITY_ID: ${{ inputs.city }}
+
+      - name: Scrape one no-website business
+        run: python scrap.py
+        env:
+          SEARCH_QUERY: ${{ steps.search.outputs.search_query }}
+          NICHE_ID: ${{ inputs.niche }}
+          NICHE_LABEL: ${{ steps.search.outputs.niche_label }}
+          MAX_RESULTS: "1"
+          MAX_CHECK_LISTINGS: "35"
+          HEADLESS: "true"
+          SLOW_MO: "0"
+          REQUIRE_LEADS: "true"
+          SKIP_SHEET_UPSERT: ${{ inputs.update_sheet && 'false' || 'true' }}
+          SKIP_INVENTORY: "true"
+          SKIP_REVIEW_SCRAPE: ${{ inputs.scrape_reviews && 'false' || 'true' }}
+          MAX_REVIEW_SNIPPETS: "5"
+          REVIEW_SCRAPE_TIMEOUT_SEC: "10"
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+
+      - name: Generate site copy with DeepSeek
+        run: python scripts/generate_site.py
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          LEAD_INDEX: "0"
+
+      - name: Deploy demo site
+        id: deploy
+        run: python scripts/deploy_org_site.py
+        env:
+          DEPLOY_ORG: ${{ vars.DEPLOY_ORG }}
+          ORG_DEPLOY_TOKEN: ${{ secrets.ORG_DEPLOY_TOKEN }}
+          DEPLOY_REPO: web-auto-demo
+          LEAD_INDEX: "0"
+
+      - name: Update Google Sheet
+        if: inputs.update_sheet
+        run: python scripts/update_sheet.py
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          LIVE_URL: ${{ steps.deploy.outputs.live_url }}
+          COPY_STATUS: Done
+          LEAD_INDEX: "0"
+
+      - name: Demo summary
+        run: |
+          LEAD=$(python -c "import json; print(json.load(open('data/leads.json'))[0]['name'])")
+          URL="${{ steps.deploy.outputs.live_url }}"
+          {
+            echo "## Demo complete"
+            echo ""
+            echo "**Business:** ${LEAD}"
+            echo ""
+            echo "**Live site:** ${URL}"
+            echo ""
+            echo "Share this URL — it updates each time you run the demo workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "live_url=${URL}" >> "$GITHUB_OUTPUT"
