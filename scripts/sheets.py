@@ -41,6 +41,8 @@ def record_to_lead(row: dict) -> dict:
         "google_maps_url": row.get("Google Maps URL", ""),
         "deploy_duration_sec": row.get("Deploy Sec", ""),
         "site_created_at": row.get("Site Created", ""),
+        "rating": row.get("Rating", ""),
+        "reviews": row.get("Reviews", ""),
     }
 
 
@@ -121,6 +123,8 @@ HEADERS = [
     "Google Maps URL",
     "Deploy Sec",
     "Site Created",
+    "Rating",
+    "Reviews",
 ]
 
 AUDIT_SHEET_NAME = "Audit Log"
@@ -253,6 +257,26 @@ def is_mock_lead(lead: dict) -> bool:
     return False
 
 
+def _sheet_rating(lead: dict) -> str:
+    val = lead.get("rating")
+    if val is None or val == "":
+        return ""
+    try:
+        return str(float(val))
+    except (TypeError, ValueError):
+        return str(val).strip()
+
+
+def _sheet_reviews(lead: dict) -> str:
+    val = lead.get("reviews")
+    if val is None or val == "":
+        return ""
+    try:
+        return str(int(float(val)))
+    except (TypeError, ValueError):
+        return str(val).strip()
+
+
 def lead_to_row(lead: dict) -> list:
     return [
         strip_icon_glyphs(lead.get("name", "")),
@@ -265,6 +289,8 @@ def lead_to_row(lead: dict) -> list:
         resolve_maps_url(lead),
         lead.get("deploy_duration_sec", ""),
         lead.get("site_created_at", ""),
+        _sheet_rating(lead),
+        _sheet_reviews(lead),
     ]
 
 
@@ -279,6 +305,8 @@ def _merge_existing_fields(lead: dict, existing: dict | None) -> dict:
         ("Deploy Sec", "deploy_duration_sec"),
         ("Site Created", "site_created_at"),
         ("Google Maps URL", "google_maps_url"),
+        ("Rating", "rating"),
+        ("Reviews", "reviews"),
     ):
         if not str(merged.get(lead_key) or "").strip():
             merged[lead_key] = existing.get(sheet_key, "")

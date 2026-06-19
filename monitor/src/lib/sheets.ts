@@ -12,7 +12,21 @@ const HEADERS = [
   "Google Maps URL",
   "Deploy Sec",
   "Site Created",
+  "Rating",
+  "Reviews",
 ] as const;
+
+function parseReviews(raw: string | undefined): number | null {
+  if (!raw?.trim()) return null;
+  const n = Number.parseInt(raw.trim(), 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function parseRating(raw: string | undefined): number | null {
+  if (!raw?.trim()) return null;
+  const n = Number.parseFloat(raw.trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 function parseDeploySec(raw: string | undefined): number | null {
   if (!raw?.trim()) return null;
@@ -45,6 +59,8 @@ function rowToLead(row: string[]): Lead | null {
     mapsUrl: row[7] || "",
     deployDurationSec: parseDeploySec(row[8]),
     siteCreatedAt: row[9]?.trim() || null,
+    rating: parseRating(row[10]),
+    reviews: parseReviews(row[11]),
   };
 }
 
@@ -56,7 +72,7 @@ export async function fetchLeadsFromSheet(): Promise<Lead[]> {
 
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
-  const range = `Sheet1!A1:J1000`;
+  const range = `Sheet1!A1:L1000`;
 
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   const rows = res.data.values ?? [];

@@ -102,6 +102,23 @@ export function LiveSitesPanel({
                     </div>
                     <div>
                       <dt className="text-xs font-medium uppercase tracking-wide text-ink-500">
+                        Google reviews
+                      </dt>
+                      <dd className="mt-1 text-xs text-ink-200">
+                        {lead.reviews != null ? (
+                          <>
+                            {lead.rating != null && (
+                              <span className="text-signal-amber">{lead.rating}★ · </span>
+                            )}
+                            {lead.reviews.toLocaleString()} reviews
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-ink-500">
                         Google Maps
                       </dt>
                       <dd className="mt-1">

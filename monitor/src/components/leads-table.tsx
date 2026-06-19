@@ -68,6 +68,7 @@ export function LeadsTable({ leads }: { leads: Lead[] }) {
               <th className="table-head pb-3 pr-4">Niche</th>
               <th className="table-head pb-3 pr-4">City</th>
               <th className="table-head pb-3 pr-4">Phone</th>
+              <th className="table-head pb-3 pr-4">Reviews</th>
               <th className="table-head pb-3 pr-4">Scraped</th>
               <th className="table-head pb-3 pr-4">Copy</th>
               <th className="table-head pb-3">Links</th>
@@ -76,7 +77,7 @@ export function LeadsTable({ leads }: { leads: Lead[] }) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-sm text-ink-500">
+                <td colSpan={8} className="py-8 text-center text-sm text-ink-500">
                   No leads match your filters. Run the GitHub Actions pipeline to populate the sheet.
                 </td>
               </tr>
@@ -87,6 +88,18 @@ export function LeadsTable({ leads }: { leads: Lead[] }) {
                   <td className="table-cell pr-4">{lead.niche || "—"}</td>
                   <td className="table-cell pr-4">{lead.city || "—"}</td>
                   <td className="table-cell pr-4 font-mono text-xs">{lead.phone || "—"}</td>
+                  <td className="table-cell pr-4 text-xs text-ink-300">
+                    {lead.reviews != null ? (
+                      <>
+                        {lead.rating != null && (
+                          <span className="text-signal-amber">{lead.rating}★ </span>
+                        )}
+                        {lead.reviews.toLocaleString()}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="table-cell pr-4">
                     <StatusBadge
                       value={lead.scrapedStatus || "—"}

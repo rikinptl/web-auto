@@ -11,6 +11,8 @@ export type Lead = {
   deployDurationSec: number | null;
   /** UTC timestamp when the site first went live */
   siteCreatedAt: string | null;
+  rating: number | null;
+  reviews: number | null;
 };
 
 export type PipelineStats = {
