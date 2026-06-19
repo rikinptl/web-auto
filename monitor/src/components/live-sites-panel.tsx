@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Lead } from "@/lib/types";
-import { formatDuration, formatUsd, leadKey } from "@/lib/format";
+import { formatUsd, leadKey } from "@/lib/format";
 
 export function LiveSitesPanel({
   leads,
@@ -36,8 +36,7 @@ export function LiveSitesPanel({
   return (
     <div>
       <p className="mb-4 text-sm text-ink-400">
-        {liveLeads.length} deployed on {orgName} · click a business for Maps link, build time, and
-        est. cost
+        {liveLeads.length} deployed on {orgName} · click a business for Maps link and est. cost
       </p>
       <ul className="space-y-1">
         {liveLeads.map((lead) => {
@@ -68,11 +67,6 @@ export function LiveSitesPanel({
                   <span className="hidden text-[10px] font-medium uppercase tracking-wide text-ink-500 sm:inline">
                     {expanded ? "Hide" : "Details"}
                   </span>
-                  {lead.deployDurationSec != null && (
-                    <span className="rounded-md bg-white/5 px-2 py-0.5 font-mono text-[10px] text-ink-400">
-                      {formatDuration(lead.deployDurationSec)}
-                    </span>
-                  )}
                   <span
                     className={`inline-flex h-6 w-6 items-center justify-center rounded-md bg-white/5 text-xs text-ink-400 transition ${expanded ? "rotate-180 bg-signal-blue/15 text-signal-blue" : ""}`}
                     aria-hidden
@@ -102,16 +96,11 @@ export function LiveSitesPanel({
                     </div>
                     <div>
                       <dt className="text-xs font-medium uppercase tracking-wide text-ink-500">
-                        Google reviews
+                        Google rating
                       </dt>
                       <dd className="mt-1 text-xs text-ink-200">
-                        {lead.reviews != null ? (
-                          <>
-                            {lead.rating != null && (
-                              <span className="text-signal-amber">{lead.rating}★ · </span>
-                            )}
-                            {lead.reviews.toLocaleString()} reviews
-                          </>
+                        {lead.rating != null ? (
+                          <span className="text-signal-amber">{lead.rating}★</span>
                         ) : (
                           "—"
                         )}
@@ -141,14 +130,6 @@ export function LiveSitesPanel({
                         Site created
                       </dt>
                       <dd className="mt-1 text-xs text-ink-200">{lead.siteCreatedAt || "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-ink-500">
-                        Build time
-                      </dt>
-                      <dd className="mt-1 font-mono text-ink-200">
-                        {formatDuration(lead.deployDurationSec)}
-                      </dd>
                     </div>
                     <div>
                       <dt className="text-xs font-medium uppercase tracking-wide text-ink-500">

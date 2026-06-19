@@ -267,9 +267,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Record deploy job start
-        run: echo "DEPLOY_JOB_START=$(date +%s)" >> $GITHUB_ENV
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -301,9 +298,7 @@ jobs:
           LEAD_INDEX: ${{ matrix.lead_index }}
 
       - name: Update Google Sheet with live URL
-        run: |
-          echo "DEPLOY_DURATION_SEC=$(( $(date +%s) - DEPLOY_JOB_START ))" >> $GITHUB_ENV
-          python scripts/update_sheet.py
+        run: python scripts/update_sheet.py
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}

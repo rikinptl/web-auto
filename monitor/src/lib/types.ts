@@ -7,12 +7,9 @@ export type Lead = {
   copyStatus: string;
   liveUrl: string;
   mapsUrl: string;
-  /** Per-site deploy job duration (generate + deploy + sheet), seconds */
-  deployDurationSec: number | null;
   /** UTC timestamp when the site first went live */
   siteCreatedAt: string | null;
   rating: number | null;
-  reviews: number | null;
 };
 
 export type PipelineStats = {

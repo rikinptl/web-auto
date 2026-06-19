@@ -68,7 +68,7 @@ export function LeadsTable({ leads }: { leads: Lead[] }) {
               <th className="table-head pb-3 pr-4">Niche</th>
               <th className="table-head pb-3 pr-4">City</th>
               <th className="table-head pb-3 pr-4">Phone</th>
-              <th className="table-head pb-3 pr-4">Reviews</th>
+              <th className="table-head pb-3 pr-4">Rating</th>
               <th className="table-head pb-3 pr-4">Scraped</th>
               <th className="table-head pb-3 pr-4">Copy</th>
               <th className="table-head pb-3">Links</th>
@@ -89,13 +89,8 @@ export function LeadsTable({ leads }: { leads: Lead[] }) {
                   <td className="table-cell pr-4">{lead.city || "—"}</td>
                   <td className="table-cell pr-4 font-mono text-xs">{lead.phone || "—"}</td>
                   <td className="table-cell pr-4 text-xs text-ink-300">
-                    {lead.reviews != null ? (
-                      <>
-                        {lead.rating != null && (
-                          <span className="text-signal-amber">{lead.rating}★ </span>
-                        )}
-                        {lead.reviews.toLocaleString()}
-                      </>
+                    {lead.rating != null ? (
+                      <span className="text-signal-amber">{lead.rating}★</span>
                     ) : (
                       "—"
                     )}

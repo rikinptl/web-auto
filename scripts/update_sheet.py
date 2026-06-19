@@ -36,8 +36,6 @@ def main() -> None:
         lead["copy_status"] = os.environ["COPY_STATUS"]
     if os.environ.get("LIVE_URL"):
         lead["live_url"] = os.environ["LIVE_URL"]
-    if os.environ.get("DEPLOY_DURATION_SEC"):
-        lead["deploy_duration_sec"] = os.environ["DEPLOY_DURATION_SEC"]
 
     if lead.get("live_url", "").strip().startswith("http"):
         if had_created and existing:
