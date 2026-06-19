@@ -262,7 +262,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 5
+      max-parallel: 2
       matrix:
         lead_index: ${{ fromJSON(needs.merge-scrape.outputs.lead_indices || needs.scrape.outputs.lead_indices || needs.export-pending.outputs.lead_indices) }}
     steps:

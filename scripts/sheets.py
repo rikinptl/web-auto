@@ -152,8 +152,8 @@ SCOPES = [
 
 LAST_COL = chr(64 + len(HEADERS))
 AUDIT_LAST_COL = chr(64 + len(AUDIT_HEADERS))
-MAX_RETRIES = 5
-RETRY_BACKOFF_SEC = 3.0
+MAX_RETRIES = 8
+RETRY_BACKOFF_SEC = 5.0
 
 
 def utc_now_str() -> str:
@@ -511,6 +511,58 @@ def upsert_lead(lead: dict) -> int:
         raise ValueError(f"Refusing mock lead data: {lead.get('name')}")
     result = upsert_leads([lead])
     return result["updated"] + result["appended"]
+
+
+def sync_deploy_lead(lead: dict) -> None:
+    """Write deploy results to inventory with one sheet read + one row write."""
+    if is_mock_lead(lead):
+        raise ValueError(f"Refusing mock lead data: {lead.get('name')}")
+
+    phone = clean_phone(lead.get("phone", ""))
+    lead = {**lead, "phone": phone, "name": strip_icon_glyphs(lead.get("name", ""))}
+    key = (lead.get("name", ""), phone)
+
+    worksheet = get_worksheet()
+    ensure_headers(worksheet)
+    existing_records = _with_retry(worksheet.get_all_records, "get_all_records")
+    row_index, existing_by_key = _inventory_index(existing_records)
+    existing = existing_by_key.get(key)
+
+    had_live = bool((existing or {}).get("Live URL", "").strip().startswith("http"))
+    had_created = bool((existing or {}).get("Site Created", "").strip())
+    lead = _merge_existing_fields(lead, existing)
+
+    if lead.get("live_url", "").strip().startswith("http"):
+        if had_created and existing:
+            lead["site_created_at"] = existing.get("Site Created", "")
+        elif not lead.get("site_created_at"):
+            lead["site_created_at"] = utc_now_str()
+
+        event = "site_redeployed" if had_live else "site_deployed"
+        try:
+            append_audit_record(lead, event)
+        except Exception as exc:
+            print(f"Warning: audit log failed ({exc}); inventory row will still update.", flush=True)
+
+    values = lead_to_row(lead)
+    existing_row = row_index.get(key)
+    if existing_row:
+
+        def _update_row():
+            worksheet.batch_update(
+                [{"range": f"A{existing_row}:{LAST_COL}{existing_row}", "values": [values]}],
+                value_input_option="USER_ENTERED",
+            )
+
+        _with_retry(_update_row, "sync_deploy_lead")
+        print(f"Updated deploy fields for {lead.get('name', '')} (row {existing_row})")
+    else:
+
+        def _append_row():
+            worksheet.append_row(values, value_input_option="USER_ENTERED")
+
+        _with_retry(_append_row, "sync_deploy_lead_append")
+        print(f"Appended deploy fields for {lead.get('name', '')}")
 
 
 def replace_inventory(leads: list[dict]) -> None:
