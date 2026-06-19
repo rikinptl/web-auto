@@ -148,6 +148,7 @@ jobs:
           REQUIRE_LEADS: "true"
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
 
       - name: Prepare deploy matrix
         id: matrix
@@ -198,6 +199,7 @@ jobs:
           REVIEW_SCRAPE_TIMEOUT_SEC: "12"
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
 
       - name: Prepare deploy matrix
         id: matrix

@@ -6,6 +6,7 @@ const HEADERS = [
   "Niche",
   "Phone",
   "City",
+  "Address",
   "Scraped Status",
   "DeepSeek Copy Status",
   "Live URL",
@@ -39,12 +40,12 @@ function rowToLead(row: string[]): Lead | null {
     niche: row[1] || "",
     phone: row[2] || "",
     city: row[3] || "",
-    scrapedStatus: row[4] || "",
-    copyStatus: row[5] || "",
-    liveUrl: row[6] || "",
-    mapsUrl: row[7] || "",
-    siteCreatedAt: row[8]?.trim() || null,
-    rating: parseRating(row[9]),
+    scrapedStatus: row[5] || "",
+    copyStatus: row[6] || "",
+    liveUrl: row[7] || "",
+    mapsUrl: row[8] || "",
+    siteCreatedAt: row[9]?.trim() || null,
+    rating: parseRating(row[10]),
   };
 }
 
@@ -56,7 +57,7 @@ export async function fetchLeadsFromSheet(): Promise<Lead[]> {
 
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
-  const range = `Sheet1!A1:J1000`;
+  const range = `Sheet1!A1:K1000`;
 
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   const rows = res.data.values ?? [];

@@ -35,6 +35,7 @@ def record_to_lead(row: dict) -> dict:
         "category": row.get("Niche", ""),
         "phone": clean_phone(row.get("Phone", "")),
         "city": row.get("City", ""),
+        "address": strip_icon_glyphs(row.get("Address", "")),
         "scraped_status": row.get("Scraped Status", ""),
         "copy_status": row.get("DeepSeek Copy Status", ""),
         "live_url": row.get("Live URL", ""),
@@ -115,6 +116,7 @@ HEADERS = [
     "Niche",
     "Phone",
     "City",
+    "Address",
     "Scraped Status",
     "DeepSeek Copy Status",
     "Live URL",
@@ -131,18 +133,12 @@ AUDIT_HEADERS = [
     "Phone",
     "Niche",
     "City",
-    "Live URL",
     "Google Maps URL",
+    "Live URL",
     "Deploy Repo",
-    "Deploy Org",
-    "Deploy Duration Sec",
     "Site Created",
     "GitHub Run ID",
-    "GitHub Workflow",
-    "GitHub Job",
-    "Lead Index",
     "Rating",
-    "Review Count",
     "Review Snippets",
     "Address",
     "Est AI Cost USD",
@@ -263,12 +259,109 @@ def _sheet_rating(lead: dict) -> str:
         return str(val).strip()
 
 
+def _audit_review_snippets(lead: dict) -> str:
+    snippets = lead.get("review_snippets") or []
+    if isinstance(snippets, list) and snippets:
+        return str(len(snippets))
+    reviews = lead.get("reviews")
+    if reviews not in (None, ""):
+        try:
+            count = int(float(reviews))
+            return str(count) if count > 0 else ""
+        except (TypeError, ValueError):
+            pass
+    return ""
+
+
+def _deploy_repo_slug(lead: dict, event: str) -> str:
+    if event not in {"site_deployed", "site_redeployed"}:
+        return ""
+    explicit = os.environ.get("DEPLOY_REPO", "").strip()
+    if explicit:
+        return explicit
+    try:
+        from deploy_org_site import repo_slug_for_lead
+
+        return repo_slug_for_lead(lead)
+    except Exception:
+        return ""
+
+
+def enrich_lead_for_audit(lead: dict) -> dict:
+    """Fill audit fields from the sheet when the lead payload is partial (e.g. deploy-pending export)."""
+    enriched = {**lead}
+    if not str(enriched.get("google_maps_url") or "").strip():
+        enriched["google_maps_url"] = resolve_maps_url(enriched)
+
+    try:
+        existing = find_lead_in_inventory(enriched.get("name", ""), enriched.get("phone", ""))
+    except Exception:
+        existing = None
+
+    if existing:
+        for sheet_key, lead_key in (
+            ("Live URL", "live_url"),
+            ("Google Maps URL", "google_maps_url"),
+            ("Site Created", "site_created_at"),
+            ("Rating", "rating"),
+            ("Niche", "niche"),
+            ("City", "city"),
+            ("Address", "address"),
+        ):
+            if not str(enriched.get(lead_key) or "").strip():
+                enriched[lead_key] = existing.get(sheet_key, "")
+
+    return enriched
+
+
+def _audit_notes(lead: dict, event: str, notes: str) -> str:
+    parts = [notes.strip()] if notes and notes.strip() else []
+    if event == "lead_scraped":
+        reviews = lead.get("reviews")
+        if reviews not in (None, ""):
+            try:
+                parts.append(f"{int(float(reviews))} Google reviews")
+            except (TypeError, ValueError):
+                pass
+    return "; ".join(part for part in parts if part)
+
+
+def audit_row_from_lead(lead: dict, event: str, notes: str = "") -> list:
+    lead = enrich_lead_for_audit(lead)
+    est_cost = ""
+    if event in {"site_deployed", "site_redeployed"}:
+        est_cost = os.environ.get("EST_AI_COST_USD", os.environ.get("DEEPSEEK_EST_COST_PER_SITE", "0.03"))
+
+    live_url = lead.get("live_url", "") if event in {"site_deployed", "site_redeployed"} else ""
+    site_created = lead.get("site_created_at", "") if event in {"site_deployed", "site_redeployed"} else ""
+
+    return [
+        utc_now_str(),
+        event,
+        strip_icon_glyphs(lead.get("name", "")),
+        clean_phone(lead.get("phone", "")),
+        lead.get("niche") or lead.get("category", ""),
+        lead.get("city", ""),
+        resolve_maps_url(lead),
+        live_url,
+        _deploy_repo_slug(lead, event),
+        site_created,
+        os.environ.get("GITHUB_RUN_ID", ""),
+        _sheet_rating(lead),
+        _audit_review_snippets(lead),
+        strip_icon_glyphs(lead.get("address", "")),
+        est_cost,
+        _audit_notes(lead, event, notes),
+    ]
+
+
 def lead_to_row(lead: dict) -> list:
     return [
         strip_icon_glyphs(lead.get("name", "")),
         lead.get("niche") or lead.get("category", ""),
         clean_phone(lead.get("phone", "")),
         lead.get("city", ""),
+        strip_icon_glyphs(lead.get("address", "")),
         lead.get("scraped_status", "Done"),
         lead.get("copy_status", "Pending"),
         lead.get("live_url", ""),
@@ -289,41 +382,11 @@ def _merge_existing_fields(lead: dict, existing: dict | None) -> dict:
         ("Site Created", "site_created_at"),
         ("Google Maps URL", "google_maps_url"),
         ("Rating", "rating"),
+        ("Address", "address"),
     ):
         if not str(merged.get(lead_key) or "").strip():
             merged[lead_key] = existing.get(sheet_key, "")
     return merged
-
-
-def audit_row_from_lead(lead: dict, event: str, notes: str = "") -> list:
-    snippets = lead.get("review_snippets") or []
-    snippet_count = len(snippets) if isinstance(snippets, list) else 0
-    est_cost = os.environ.get("EST_AI_COST_USD", os.environ.get("DEEPSEEK_EST_COST_PER_SITE", "0.03"))
-
-    return [
-        utc_now_str(),
-        event,
-        strip_icon_glyphs(lead.get("name", "")),
-        clean_phone(lead.get("phone", "")),
-        lead.get("niche") or lead.get("category", ""),
-        lead.get("city", ""),
-        lead.get("live_url", ""),
-        resolve_maps_url(lead),
-        os.environ.get("DEPLOY_REPO", ""),
-        os.environ.get("DEPLOY_ORG", os.environ.get("GITHUB_ORG", "kem-llc")),
-        lead.get("deploy_duration_sec", ""),
-        lead.get("site_created_at", ""),
-        os.environ.get("GITHUB_RUN_ID", ""),
-        os.environ.get("GITHUB_WORKFLOW", ""),
-        os.environ.get("GITHUB_JOB", ""),
-        os.environ.get("LEAD_INDEX", ""),
-        lead.get("rating", ""),
-        lead.get("reviews", ""),
-        snippet_count,
-        strip_icon_glyphs(lead.get("address", "")),
-        est_cost,
-        notes,
-    ]
 
 
 def append_audit_record(lead: dict, event: str, notes: str = "") -> None:
