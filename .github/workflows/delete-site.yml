@@ -1,0 +1,63 @@
+name: Delete kem-llc site
+
+run-name: >-
+  Delete site ${{ inputs.live_url }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      live_url:
+        description: Live site URL (e.g. https://kem-llc.github.io/business-dallas-1234/)
+        required: true
+        type: string
+      confirm:
+        description: Type DELETE to confirm repo removal
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  delete-site:
+    if: inputs.confirm == 'DELETE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Delete org repo
+        run: python scripts/delete_org_site.py
+        env:
+          DEPLOY_ORG: ${{ vars.DEPLOY_ORG }}
+          ORG_DEPLOY_TOKEN: ${{ secrets.ORG_DEPLOY_TOKEN }}
+          LIVE_URL: ${{ inputs.live_url }}
+
+      - name: Summary
+        run: |
+          {
+            echo "## Site deleted"
+            echo ""
+            echo "**URL:** ${{ inputs.live_url }}"
+            echo ""
+            echo "The kem-llc GitHub repo and its Pages site have been removed."
+            echo "The Google Sheet row is unchanged — clear Live URL manually if needed."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  confirm-required:
+    if: inputs.confirm != 'DELETE'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Abort — confirmation missing
+        run: |
+          echo "::error::You must type DELETE in the confirm field to delete a repo."
+          exit 1
