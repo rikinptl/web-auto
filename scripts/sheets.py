@@ -160,8 +160,8 @@ SCOPES = [
 
 LAST_COL = chr(64 + len(HEADERS))
 AUDIT_LAST_COL = chr(64 + len(AUDIT_HEADERS))
-MAX_RETRIES = 3
-RETRY_BACKOFF_SEC = 2.0
+MAX_RETRIES = 5
+RETRY_BACKOFF_SEC = 3.0
 
 
 def utc_now_str() -> str:
@@ -346,14 +346,25 @@ def audit_row_from_lead(lead: dict, event: str, notes: str = "") -> list:
 
 def append_audit_record(lead: dict, event: str, notes: str = "") -> None:
     """Append one row to the Audit Log sheet (never overwrites history)."""
+    append_audit_records_batch([(lead, event, notes)])
+
+
+def append_audit_records_batch(
+    events: list[tuple[dict, str, str]],
+) -> None:
+    """Append multiple audit rows in one Sheets API call."""
+    if not events:
+        return
+
     worksheet = get_audit_worksheet()
-    row = audit_row_from_lead(lead, event, notes=notes)
+    rows = [audit_row_from_lead(lead, event, notes=notes) for lead, event, notes in events]
 
     def _append():
-        worksheet.append_row(row, value_input_option="USER_ENTERED")
+        worksheet.append_rows(rows, value_input_option="USER_ENTERED")
 
-    _with_retry(_append, "append_audit_record")
-    print(f"Audit log: {event} — {lead.get('name', '')}", flush=True)
+    _with_retry(_append, "append_audit_records_batch")
+    for lead, event, _ in events:
+        print(f"Audit log: {event} — {lead.get('name', '')}", flush=True)
 
 
 def find_lead_in_inventory(name: str, phone: str) -> dict | None:
@@ -372,16 +383,17 @@ def find_lead_in_inventory(name: str, phone: str) -> dict | None:
     return None
 
 
-def _load_row_index(worksheet) -> dict[tuple[str, str], int]:
-    records = _with_retry(worksheet.get_all_records, "get_all_records")
-    index: dict[tuple[str, str], int] = {}
+def _inventory_index(records: list[dict]) -> tuple[dict[tuple[str, str], int], dict[tuple[str, str], dict]]:
+    row_index: dict[tuple[str, str], int] = {}
+    existing_by_key: dict[tuple[str, str], dict] = {}
     for row_number, row in enumerate(records, start=2):
         key = (
             strip_icon_glyphs(row.get("Business Name", "")),
             clean_phone(row.get("Phone", "")),
         )
-        index[key] = row_number
-    return index
+        row_index[key] = row_number
+        existing_by_key[key] = row
+    return row_index, existing_by_key
 
 
 def upsert_leads(leads: list[dict]) -> dict[str, int]:
@@ -391,15 +403,8 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
 
     worksheet = get_worksheet()
     ensure_headers(worksheet)
-    row_index = _load_row_index(worksheet)
     existing_records = _with_retry(worksheet.get_all_records, "get_all_records")
-    existing_by_key: dict[tuple[str, str], dict] = {}
-    for row in existing_records:
-        key = (
-            strip_icon_glyphs(row.get("Business Name", "")),
-            clean_phone(row.get("Phone", "")),
-        )
-        existing_by_key[key] = row
+    row_index, existing_by_key = _inventory_index(existing_records)
 
     batch_updates = []
     rows_to_append = []
@@ -440,8 +445,17 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
         _with_retry(_append_rows, "append_rows")
         print(f"Batch appended {len(rows_to_append)} row(s)")
 
-    for lead, event in audit_events:
-        append_audit_record(lead, event, notes="New lead added to inventory")
+    if audit_events:
+        try:
+            append_audit_records_batch(
+                [(lead, event, "New lead added to inventory") for lead, event in audit_events]
+            )
+        except Exception as exc:
+            print(
+                f"Warning: audit log write failed after sheet upsert ({exc}); "
+                "inventory rows were saved.",
+                flush=True,
+            )
 
     return {"updated": len(batch_updates), "appended": len(rows_to_append)}
 
