@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from delete_org_site import repo_slug_from_live_url, try_delete_org_repo  # noqa: E402
 from deploy_org_site import repo_slug_for_lead  # noqa: E402
 from sheets import (  # noqa: E402
-    DECLINE_COL,
+    HEADERS,
     LAST_COL,
     _get_all_records,
     _inventory_index,
@@ -23,10 +23,44 @@ from sheets import (  # noqa: E402
     ensure_headers,
     get_worksheet,
     highlight_decline_cells,
-    is_declined_raw_row,
     lead_to_row,
-    record_from_raw_row,
+    record_to_lead,
 )
+
+
+def _header_indices(header_row: list[str], name: str) -> list[int]:
+    target = name.strip().lower()
+    return [i for i, header in enumerate(header_row) if str(header).strip().lower() == target]
+
+
+def _cell(raw_row: list[str], index: int) -> str:
+    if index < 0 or index >= len(raw_row):
+        return ""
+    return str(raw_row[index]).strip()
+
+
+def _row_decline_info(header_row: list[str], raw_row: list[str]) -> tuple[bool, list[int]]:
+    decline_cols = _header_indices(header_row, "Decline")
+    if not decline_cols:
+        decline_cols = [len(HEADERS) - 1]
+    matched = [idx for idx in decline_cols if _cell(raw_row, idx).upper() == "Y"]
+    return bool(matched), matched
+
+
+def _lead_from_raw_row(header_row: list[str], raw_row: list[str]) -> dict:
+    row_dict: dict[str, str] = {}
+    for i, header in enumerate(header_row):
+        if not str(header).strip():
+            continue
+        row_dict[header] = _cell(raw_row, i)
+    lead = record_to_lead(row_dict)
+    declined, _ = _row_decline_info(header_row, raw_row)
+    if declined:
+        lead["decline"] = "Y"
+    live_cols = _header_indices(header_row, "Live URL")
+    if live_cols:
+        lead["live_url"] = _cell(raw_row, live_cols[0])
+    return lead
 
 
 def _repo_slug_for_row(lead: dict, org: str) -> str | None:
@@ -49,53 +83,60 @@ def process_declines() -> dict[str, int]:
     worksheet = get_worksheet()
     ensure_headers(worksheet)
     all_values = _with_retry(worksheet.get_all_values, "get_all_values")
+    if not all_values:
+        return {"checked": 0, "deleted": 0, "skipped": 0, "errors": 0}
+
+    header_row = all_values[0]
     records = _with_retry(lambda: _get_all_records(worksheet), "get_all_records")
     row_index, existing_by_key = _inventory_index(records)
 
     stats = {"checked": 0, "deleted": 0, "skipped": 0, "errors": 0}
     highlight_rows: list[int] = []
+    highlight_cols: set[int] = set()
     batch_updates = []
 
     for offset, raw_row in enumerate(all_values[1:], start=2):
-        lead = record_from_raw_row(raw_row)
-        if not lead.get("name") or not is_declined_raw_row(raw_row):
+        lead = _lead_from_raw_row(header_row, raw_row)
+        declined, decline_cols = _row_decline_info(header_row, raw_row)
+        if not lead.get("name") or not declined:
             continue
 
         stats["checked"] += 1
         key = (lead.get("name", ""), lead.get("phone", ""))
         row_num = row_index.get(key, offset)
         highlight_rows.append(row_num)
+        highlight_cols.update(decline_cols)
 
         live_url = (lead.get("live_url") or "").strip()
-        if not live_url.startswith("http"):
-            continue
-
-        repo_slug = _repo_slug_for_row(lead, org)
-        if repo_slug:
-            deleted, status = try_delete_org_repo(org, repo_slug, token)
-            if deleted:
-                stats["deleted"] += 1
-                print(f"Deleted {org}/{repo_slug} — {lead['name']}", flush=True)
-            elif status == "not_found":
-                print(f"Repo already gone: {org}/{repo_slug} — {lead['name']}", flush=True)
+        if live_url.startswith("http"):
+            repo_slug = _repo_slug_for_row(lead, org)
+            if repo_slug:
+                deleted, status = try_delete_org_repo(org, repo_slug, token)
+                if deleted:
+                    stats["deleted"] += 1
+                    print(f"Deleted {org}/{repo_slug} — {lead['name']}", flush=True)
+                elif status == "not_found":
+                    print(f"Repo already gone: {org}/{repo_slug} — {lead['name']}", flush=True)
+                else:
+                    stats["errors"] += 1
+                    print(f"Warning: could not delete {org}/{repo_slug}: {status}", flush=True)
             else:
-                stats["errors"] += 1
-                print(f"Warning: could not delete {org}/{repo_slug}: {status}", flush=True)
+                stats["skipped"] += 1
+                print(f"No repo slug for declined row — {lead['name']}", flush=True)
+
+            existing = existing_by_key.get(key, {})
+            updated = _merge_existing_fields({**lead, "live_url": ""}, existing)
+            updated["decline"] = "Y"
+            batch_updates.append(
+                {"range": f"A{row_num}:{LAST_COL}{row_num}", "values": [lead_to_row(updated)]}
+            )
+
+            try:
+                append_audit_record(updated, "site_removed_declined", notes="Decline=Y in sheet")
+            except Exception as exc:
+                print(f"Warning: audit log failed for {lead['name']}: {exc}", flush=True)
         else:
-            stats["skipped"] += 1
-            print(f"No repo slug for declined row — {lead['name']}", flush=True)
-
-        existing = existing_by_key.get(key, row)
-        updated = _merge_existing_fields({**lead, "live_url": ""}, existing)
-        updated["decline"] = "Y"
-        batch_updates.append(
-            {"range": f"A{row_num}:{LAST_COL}{row_num}", "values": [lead_to_row(updated)]}
-        )
-
-        try:
-            append_audit_record(updated, "site_removed_declined", notes="Decline=Y in sheet")
-        except Exception as exc:
-            print(f"Warning: audit log failed for {lead['name']}: {exc}", flush=True)
+            print(f"Declined (no live URL to delete) — {lead['name']}", flush=True)
 
     if batch_updates:
 
@@ -105,7 +146,7 @@ def process_declines() -> dict[str, int]:
         _with_retry(_batch_update, "process_declines_update")
         print(f"Cleared Live URL on {len(batch_updates)} declined row(s)", flush=True)
 
-    highlight_decline_cells(worksheet, highlight_rows)
+    highlight_decline_cells(worksheet, highlight_rows, sorted(highlight_cols))
     return stats
 
 

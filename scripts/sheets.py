@@ -430,14 +430,17 @@ def _merge_existing_fields(lead: dict, existing: dict | None) -> dict:
     return merged
 
 
-def highlight_decline_cells(worksheet, row_numbers: list[int]) -> None:
+def highlight_decline_cells(worksheet, row_numbers: list[int], column_indices: list[int] | None = None) -> None:
     """Light-red background on Decline cells for processed rows."""
     if not row_numbers:
         return
+    cols = column_indices or [ord(DECLINE_COL) - ord("A")]
 
     def _format():
         for row_number in row_numbers:
-            worksheet.format(f"{DECLINE_COL}{row_number}", DECLINE_HIGHLIGHT)
+            for col_idx in cols:
+                col_letter = chr(ord("A") + col_idx)
+                worksheet.format(f"{col_letter}{row_number}", DECLINE_HIGHLIGHT)
 
     _with_retry(_format, "highlight_decline_cells")
     print(f"Highlighted {len(row_numbers)} Decline cell(s)", flush=True)
