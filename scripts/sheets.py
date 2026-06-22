@@ -152,7 +152,7 @@ HEADERS = [
 ]
 
 DECLINE_COL = chr(64 + len(HEADERS))
-DECLINE_HIGHLIGHT = {
+ROW_DECLINE_HIGHLIGHT = {
     "backgroundColor": {"red": 0.96, "green": 0.80, "blue": 0.80},
 }
 
@@ -430,20 +430,17 @@ def _merge_existing_fields(lead: dict, existing: dict | None) -> dict:
     return merged
 
 
-def highlight_decline_cells(worksheet, row_numbers: list[int], column_indices: list[int] | None = None) -> None:
-    """Light-red background on Decline cells for processed rows."""
+def highlight_declined_rows(worksheet, row_numbers: list[int]) -> None:
+    """Light-red background on entire rows marked declined."""
     if not row_numbers:
         return
-    cols = column_indices or [ord(DECLINE_COL) - ord("A")]
 
     def _format():
         for row_number in row_numbers:
-            for col_idx in cols:
-                col_letter = chr(ord("A") + col_idx)
-                worksheet.format(f"{col_letter}{row_number}", DECLINE_HIGHLIGHT)
+            worksheet.format(f"A{row_number}:{LAST_COL}{row_number}", ROW_DECLINE_HIGHLIGHT)
 
-    _with_retry(_format, "highlight_decline_cells")
-    print(f"Highlighted {len(row_numbers)} Decline cell(s)", flush=True)
+    _with_retry(_format, "highlight_declined_rows")
+    print(f"Highlighted {len(row_numbers)} declined row(s)", flush=True)
 
 
 def append_audit_record(lead: dict, event: str, notes: str = "") -> None:
