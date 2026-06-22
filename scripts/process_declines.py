@@ -15,6 +15,7 @@ from deploy_org_site import repo_slug_for_lead  # noqa: E402
 from sheets import (  # noqa: E402
     DECLINE_COL,
     LAST_COL,
+    _get_all_records,
     _inventory_index,
     _merge_existing_fields,
     _with_retry,
@@ -47,7 +48,7 @@ def process_declines() -> dict[str, int]:
 
     worksheet = get_worksheet()
     ensure_headers(worksheet)
-    records = _with_retry(worksheet.get_all_records, "get_all_records")
+    records = _with_retry(lambda: _get_all_records(worksheet), "get_all_records")
     row_index, existing_by_key = _inventory_index(records)
 
     stats = {"checked": 0, "deleted": 0, "skipped": 0, "errors": 0}
