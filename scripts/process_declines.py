@@ -41,9 +41,20 @@ def _cell(raw_row: list[str], index: int) -> str:
 
 def _row_decline_info(header_row: list[str], raw_row: list[str]) -> tuple[bool, list[int]]:
     decline_cols = _header_indices(header_row, "Decline")
-    if not decline_cols:
-        decline_cols = [len(HEADERS) - 1]
     matched = [idx for idx in decline_cols if _cell(raw_row, idx).upper() == "Y"]
+    if matched:
+        return True, matched
+
+    decline_values = [_cell(raw_row, idx) for idx in decline_cols]
+    if decline_cols and any(decline_values):
+        return False, []
+
+    # Out-of-band Y when Decline column(s) are empty (shifted manual sheets).
+    last_named = max((i for i, header in enumerate(header_row) if str(header).strip()), default=-1)
+    for idx in range(last_named + 1, len(raw_row)):
+        if _cell(raw_row, idx).upper() == "Y":
+            matched.append(idx)
+
     return bool(matched), matched
 
 
