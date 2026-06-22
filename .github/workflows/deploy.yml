@@ -80,7 +80,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  process-declines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Process declined leads (delete kem-llc repos)
+        run: python scripts/process_declines.py
+        env:
+          DEPLOY_ORG: ${{ vars.DEPLOY_ORG }}
+          ORG_DEPLOY_TOKEN: ${{ secrets.ORG_DEPLOY_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+
   scrape-all:
+    needs: process-declines
     if: ${{ github.event_name == 'schedule' || (!inputs.deploy_pending_only && inputs.scrape_mode == 'all_niches') }}
     runs-on: ubuntu-latest
     container:
@@ -162,6 +187,7 @@ jobs:
           retention-days: 7
 
   scrape:
+    needs: process-declines
     if: ${{ github.event_name != 'schedule' && !inputs.deploy_pending_only && inputs.scrape_mode == 'single' }}
     runs-on: ubuntu-latest
     container:
@@ -213,6 +239,7 @@ jobs:
           retention-days: 7
 
   export-pending:
+    needs: process-declines
     if: ${{ github.event_name != 'schedule' && inputs.deploy_pending_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

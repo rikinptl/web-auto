@@ -43,13 +43,23 @@ def repo_slug_from_live_url(live_url: str, org: str) -> str:
 
 
 def delete_org_repo(org: str, repo: str, token: str) -> None:
+    ok, message = try_delete_org_repo(org, repo, token)
+    if message == "not_found":
+        raise SystemExit(f"Repo not found: {org}/{repo}")
+    if not ok:
+        raise SystemExit(f"Failed to delete {org}/{repo}: {message}")
+    print(f"Deleted GitHub repo: {org}/{repo}")
+
+
+def try_delete_org_repo(org: str, repo: str, token: str) -> tuple[bool, str]:
+    """Delete org repo. Returns (deleted, status) where status is deleted|not_found|error message."""
     status, body = github_request("DELETE", f"/repos/{org}/{repo}", token)
     if status == 404:
-        raise SystemExit(f"Repo not found: {org}/{repo}")
-    if status not in {202, 204}:
-        message = (body or {}).get("message", body) if isinstance(body, dict) else body
-        raise SystemExit(f"Failed to delete {org}/{repo}: HTTP {status} — {message}")
-    print(f"Deleted GitHub repo: {org}/{repo}")
+        return False, "not_found"
+    if status in {202, 204}:
+        return True, "deleted"
+    message = (body or {}).get("message", body) if isinstance(body, dict) else body
+    return False, f"HTTP {status}: {message}"
 
 
 def main() -> None:

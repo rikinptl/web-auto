@@ -42,6 +42,7 @@ def record_to_lead(row: dict) -> dict:
         "google_maps_url": row.get("Google Maps URL", ""),
         "site_created_at": row.get("Site Created", ""),
         "rating": row.get("Rating", ""),
+        "decline": row.get("Decline", ""),
     }
 
 
@@ -65,11 +66,17 @@ def load_pending_deploy_leads() -> list[dict]:
     """Leads in the sheet that still need copy and/or a live site URL."""
     pending: list[dict] = []
     for lead in load_inventory():
+        if is_declined(lead):
+            continue
         copy_done = (lead.get("copy_status") or "").strip().lower() == "done"
         has_live = (lead.get("live_url") or "").strip().startswith("http")
         if not copy_done or not has_live:
             pending.append(lead)
     return pending
+
+
+def is_declined(lead: dict) -> bool:
+    return str(lead.get("decline") or "").strip().upper() == "Y"
 
 
 class InventorySkipIndex:
@@ -123,7 +130,13 @@ HEADERS = [
     "Google Maps URL",
     "Site Created",
     "Rating",
+    "Decline",
 ]
+
+DECLINE_COL = chr(64 + len(HEADERS))
+DECLINE_HIGHLIGHT = {
+    "backgroundColor": {"red": 0.96, "green": 0.80, "blue": 0.80},
+}
 
 AUDIT_SHEET_NAME = "Audit Log"
 AUDIT_HEADERS = [
@@ -368,6 +381,7 @@ def lead_to_row(lead: dict) -> list:
         resolve_maps_url(lead),
         lead.get("site_created_at", ""),
         _sheet_rating(lead),
+        str(lead.get("decline") or "").strip(),
     ]
 
 
@@ -383,10 +397,24 @@ def _merge_existing_fields(lead: dict, existing: dict | None) -> dict:
         ("Google Maps URL", "google_maps_url"),
         ("Rating", "rating"),
         ("Address", "address"),
+        ("Decline", "decline"),
     ):
         if not str(merged.get(lead_key) or "").strip():
             merged[lead_key] = existing.get(sheet_key, "")
     return merged
+
+
+def highlight_decline_cells(worksheet, row_numbers: list[int]) -> None:
+    """Light-red background on Decline cells for processed rows."""
+    if not row_numbers:
+        return
+
+    def _format():
+        for row_number in row_numbers:
+            worksheet.format(f"{DECLINE_COL}{row_number}", DECLINE_HIGHLIGHT)
+
+    _with_retry(_format, "highlight_decline_cells")
+    print(f"Highlighted {len(row_numbers)} Decline cell(s)", flush=True)
 
 
 def append_audit_record(lead: dict, event: str, notes: str = "") -> None:

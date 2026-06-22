@@ -10,6 +10,7 @@ export type Lead = {
   /** UTC timestamp when the site first went live */
   siteCreatedAt: string | null;
   rating: number | null;
+  decline: boolean;
 };
 
 export type PipelineStats = {

@@ -13,6 +13,7 @@ const HEADERS = [
   "Google Maps URL",
   "Site Created",
   "Rating",
+  "Decline",
 ] as const;
 
 function parseRating(raw: string | undefined): number | null {
@@ -46,6 +47,7 @@ function rowToLead(row: string[]): Lead | null {
     mapsUrl: row[8] || "",
     siteCreatedAt: row[9]?.trim() || null,
     rating: parseRating(row[10]),
+    decline: (row[11] || "").trim().toUpperCase() === "Y",
   };
 }
 
@@ -57,7 +59,7 @@ export async function fetchLeadsFromSheet(): Promise<Lead[]> {
 
   const auth = getAuth();
   const sheets = google.sheets({ version: "v4", auth });
-  const range = `Sheet1!A1:K1000`;
+  const range = `Sheet1!A1:L1000`;
 
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   const rows = res.data.values ?? [];
