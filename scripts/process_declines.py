@@ -23,9 +23,9 @@ from sheets import (  # noqa: E402
     ensure_headers,
     get_worksheet,
     highlight_decline_cells,
-    is_declined,
+    is_declined_raw_row,
     lead_to_row,
-    record_to_lead,
+    record_from_raw_row,
 )
 
 
@@ -48,6 +48,7 @@ def process_declines() -> dict[str, int]:
 
     worksheet = get_worksheet()
     ensure_headers(worksheet)
+    all_values = _with_retry(worksheet.get_all_values, "get_all_values")
     records = _with_retry(lambda: _get_all_records(worksheet), "get_all_records")
     row_index, existing_by_key = _inventory_index(records)
 
@@ -55,14 +56,14 @@ def process_declines() -> dict[str, int]:
     highlight_rows: list[int] = []
     batch_updates = []
 
-    for row_number, row in enumerate(records, start=2):
-        lead = record_to_lead(row)
-        if not lead.get("name") or not is_declined(lead):
+    for offset, raw_row in enumerate(all_values[1:], start=2):
+        lead = record_from_raw_row(raw_row)
+        if not lead.get("name") or not is_declined_raw_row(raw_row):
             continue
 
         stats["checked"] += 1
         key = (lead.get("name", ""), lead.get("phone", ""))
-        row_num = row_index.get(key, row_number)
+        row_num = row_index.get(key, offset)
         highlight_rows.append(row_num)
 
         live_url = (lead.get("live_url") or "").strip()

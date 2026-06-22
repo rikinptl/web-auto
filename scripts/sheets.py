@@ -79,6 +79,24 @@ def is_declined(lead: dict) -> bool:
     return str(lead.get("decline") or "").strip().upper() == "Y"
 
 
+def is_declined_raw_row(raw_row: list[str]) -> bool:
+    """True if Decline=Y in the canonical column or a duplicate trailing Decline column."""
+    decline_idx = len(HEADERS) - 1
+    for cell in raw_row[decline_idx:]:
+        if str(cell or "").strip().upper() == "Y":
+            return True
+    return False
+
+
+def record_from_raw_row(raw_row: list[str]) -> dict:
+    padded = list(raw_row) + [""] * max(0, len(HEADERS) - len(raw_row))
+    row = dict(zip(HEADERS, padded[: len(HEADERS)]))
+    lead = record_to_lead(row)
+    if is_declined_raw_row(raw_row):
+        lead["decline"] = "Y"
+    return lead
+
+
 class InventorySkipIndex:
     """Fast lookups to skip businesses already present in the sheet."""
 
