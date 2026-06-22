@@ -50,7 +50,7 @@ def load_inventory() -> list[dict]:
     """Read all leads currently stored in the Google Sheet."""
     worksheet = get_worksheet()
     ensure_headers(worksheet)
-    records = _with_retry(worksheet.get_all_records, "get_all_records")
+    records = _with_retry(lambda: _get_all_records(worksheet), "get_all_records")
     leads: list[dict] = []
     for row in records:
         lead = record_to_lead(row)
@@ -214,14 +214,22 @@ def _with_retry(action, label: str):
             time.sleep(wait)
 
 
+def _get_all_records(worksheet):
+    """Read inventory rows using canonical headers (tolerates duplicate/extra sheet columns)."""
+    return worksheet.get_all_records(expected_headers=list(HEADERS))
+
+
 def ensure_headers(worksheet) -> None:
     first_row = worksheet.row_values(1)
-    if first_row == HEADERS:
+    canonical = first_row[: len(HEADERS)]
+    if canonical == HEADERS and len(first_row) <= len(HEADERS):
         return
 
     def _update_headers():
-        worksheet.update(values=[HEADERS], range_name="A1", value_input_option="USER_ENTERED")
+        worksheet.update(values=[HEADERS], range_name=f"A1:{LAST_COL}1", value_input_option="USER_ENTERED")
         worksheet.format(f"A1:{LAST_COL}1", {"textFormat": {"bold": True}})
+        if len(first_row) > len(HEADERS):
+            worksheet.batch_clear([f"{chr(ord(LAST_COL) + 1)}1:ZZ1"])
 
     _with_retry(_update_headers, "ensure_headers")
 
@@ -444,7 +452,7 @@ def find_lead_in_inventory(name: str, phone: str) -> dict | None:
     """Return existing sheet row as dict keyed by header names."""
     worksheet = get_worksheet()
     ensure_headers(worksheet)
-    records = _with_retry(worksheet.get_all_records, "get_all_records")
+    records = _with_retry(lambda: _get_all_records(worksheet), "get_all_records")
     name_norm = strip_icon_glyphs(name)
     phone_norm = clean_phone(phone)
     for row in records:
@@ -476,7 +484,7 @@ def upsert_leads(leads: list[dict]) -> dict[str, int]:
 
     worksheet = get_worksheet()
     ensure_headers(worksheet)
-    existing_records = _with_retry(worksheet.get_all_records, "get_all_records")
+    existing_records = _with_retry(lambda: _get_all_records(worksheet), "get_all_records")
     row_index, existing_by_key = _inventory_index(existing_records)
 
     batch_updates = []
@@ -552,7 +560,7 @@ def sync_deploy_lead(lead: dict) -> None:
 
     worksheet = get_worksheet()
     ensure_headers(worksheet)
-    existing_records = _with_retry(worksheet.get_all_records, "get_all_records")
+    existing_records = _with_retry(lambda: _get_all_records(worksheet), "get_all_records")
     row_index, existing_by_key = _inventory_index(existing_records)
     existing = existing_by_key.get(key)
 
@@ -601,7 +609,7 @@ def replace_inventory(leads: list[dict]) -> None:
 
     worksheet = get_worksheet()
     ensure_headers(worksheet)
-    row_count = len(_with_retry(worksheet.get_all_records, "get_all_records"))
+    row_count = len(_with_retry(lambda: _get_all_records(worksheet), "get_all_records"))
 
     if row_count:
 
