@@ -1,0 +1,37 @@
+name: Process declined leads
+
+run-name: Process Decline=Y rows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  process-declines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Process declined leads
+        run: python scripts/process_declines.py
+        env:
+          DEPLOY_ORG: ${{ vars.DEPLOY_ORG }}
+          ORG_DEPLOY_TOKEN: ${{ secrets.ORG_DEPLOY_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+
+      - name: Summary
+        run: echo "Check the sheet — Decline=Y rows should be highlighted red; Live URL cleared if a repo was deleted." >> "$GITHUB_STEP_SUMMARY"
