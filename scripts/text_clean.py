@@ -27,3 +27,14 @@ def clean_phone(phone: str | None) -> str:
     if not phone:
         return ""
     return re.sub(r"[^\d+().\- x]", "", phone, flags=re.I).strip()
+
+
+def ascii_slugify(text: str) -> str:
+    """URL/repo-safe slug: fold accents (grúas → gruas) and drop non-ASCII."""
+    if not text:
+        return ""
+    folded = unicodedata.normalize("NFKD", strip_icon_glyphs(text))
+    ascii_text = folded.encode("ascii", "ignore").decode("ascii")
+    ascii_text = ascii_text.lower().strip()
+    ascii_text = re.sub(r"[^\w\s-]", "", ascii_text)
+    return re.sub(r"[\s_-]+", "-", ascii_text).strip("-") or "site"

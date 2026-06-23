@@ -22,10 +22,11 @@ LEADS_FILE = ROOT / "data" / "leads.json"
 API_VERSION = "2022-11-28"
 
 
+from text_clean import ascii_slugify
+
+
 def slugify(text: str) -> str:
-    text = text.lower().strip()
-    text = re.sub(r"[^\w\s-]", "", text)
-    return re.sub(r"[\s_-]+", "-", text).strip("-") or "site"
+    return ascii_slugify(text)
 
 
 def repo_slug_for_lead(lead: dict) -> str:
